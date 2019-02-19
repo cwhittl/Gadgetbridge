@@ -3,6 +3,7 @@ package nodomain.freeyourgadget.gadgetbridge.devices.macosx;
 import android.app.Activity;
 import android.content.Context;
 import android.net.Uri;
+import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -87,7 +88,10 @@ public class MacOSXDeviceCoordinator extends AbstractDeviceCoordinator {
     @Override
     public DeviceType getSupportedType(GBDeviceCandidate candidate) {
         String name = candidate.getDevice().getName();
-        if (name != null && name.startsWith("mbp")) {
+        Log.i("TESTER", candidate.getDevice().toString());
+        if (name != null && name.startsWith("GadgetBridge")) {
+        //if (candidate.getDevice().toString().equals("DC:A9:04:87:66:29")) {
+            Log.i("TESTER", "GOT HERE");
             return DeviceType.MACOSX;
         }
         return DeviceType.UNKNOWN;
