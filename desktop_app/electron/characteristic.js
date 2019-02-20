@@ -38,7 +38,7 @@ NotificationCharacteristic.prototype.onWriteRequest = function (data, offset, wi
   const dataAsObject = JSON.parse(dataAsString);
 
   notifier.notify({
-    icon: path.join(__dirname, 'icon.png'),
+    icon: path.join(__dirname, 'icons/iconOrig.png'),
     title: dataAsObject.title,
     message: dataAsObject.message,
   });

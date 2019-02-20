@@ -1,7 +1,6 @@
-# example menubar app
+# GadgetBridge Desktop
 
 ## instructions
 
-- run `npm install`
-- run `npm run build` to make Example.app
-- run `npm start` to run app from CLI without building Example.app
+- run `yarn i`
+- run `yarn start` to run app from CLI without building Application
