@@ -1,10 +1,10 @@
 {
-  "name": "secure-notify-desktop",
+  "name": "gadgetbridgeosx",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "app.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "run": "node app.js"
   },
   "author": "Chris Whittle <cwhittl@gmail.com> (https://whittlecorn.com)",
   "license": "ISC",
