@@ -32,7 +32,7 @@ public class MacOSXDeviceCoordinator extends AbstractDeviceCoordinator {
 
     @Override
     public boolean supportsActivityDataFetching() {
-        return true;
+        return false;
     }
 
     @Override
