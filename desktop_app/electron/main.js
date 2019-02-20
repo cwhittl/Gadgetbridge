@@ -10,7 +10,7 @@ mb.on('ready', function ready () {
     // console.log('on -> stateChange: ' + state);
 
     if (state === 'poweredOn') {
-      bleno.startAdvertising('GadgetBridgeOSX', [primaryService.uuid]);
+      bleno.startAdvertising('GadgetBridgeDesktop', [primaryService.uuid]);
     } else {
       bleno.stopAdvertising();
     }

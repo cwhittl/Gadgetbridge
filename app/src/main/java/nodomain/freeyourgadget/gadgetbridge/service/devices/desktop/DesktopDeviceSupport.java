@@ -14,11 +14,10 @@
 
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>. */
-package nodomain.freeyourgadget.gadgetbridge.service.devices.macosx;
+package nodomain.freeyourgadget.gadgetbridge.service.devices.desktop;
 
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCharacteristic;
-import android.content.Intent;
 import android.net.Uri;
 
 import org.json.JSONException;
@@ -27,7 +26,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.UUID;
 
@@ -43,18 +41,15 @@ import nodomain.freeyourgadget.gadgetbridge.model.NotificationSpec;
 import nodomain.freeyourgadget.gadgetbridge.model.WeatherSpec;
 import nodomain.freeyourgadget.gadgetbridge.service.btle.AbstractBTLEDeviceSupport;
 import nodomain.freeyourgadget.gadgetbridge.service.btle.GattService;
-import nodomain.freeyourgadget.gadgetbridge.service.btle.profiles.alertnotification.AlertCategory;
 import nodomain.freeyourgadget.gadgetbridge.service.btle.TransactionBuilder;
 import nodomain.freeyourgadget.gadgetbridge.service.btle.actions.SetDeviceStateAction;
-import nodomain.freeyourgadget.gadgetbridge.service.btle.profiles.IntentListener;
-import nodomain.freeyourgadget.gadgetbridge.service.btle.profiles.deviceinfo.DeviceInfoProfile;
 import nodomain.freeyourgadget.gadgetbridge.util.StringUtils;
 
-public class MacOSXDeviceSupport extends AbstractBTLEDeviceSupport {
-    private static final Logger LOG = LoggerFactory.getLogger(MacOSXDeviceSupport.class);
+public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
+    private static final Logger LOG = LoggerFactory.getLogger(DesktopDeviceSupport.class);
     private final GBDeviceEventVersionInfo versionCmd = new GBDeviceEventVersionInfo();
 
-    public MacOSXDeviceSupport() {
+    public DesktopDeviceSupport() {
         super(LOG);
         addSupportedService(UUID.fromString("13333333-3333-3333-3333-333333333337"));
         addSupportedService(GattService.UUID_SERVICE_IMMEDIATE_ALERT);
@@ -70,7 +65,7 @@ public class MacOSXDeviceSupport extends AbstractBTLEDeviceSupport {
         return builder;
     }
 
-    public MacOSXDeviceSupport enableNotifications(TransactionBuilder builder, boolean enable) {
+    public DesktopDeviceSupport enableNotifications(TransactionBuilder builder, boolean enable) {
         BluetoothGattCharacteristic deviceInfo = getCharacteristic(UUID.fromString( "13333333-3333-3333-3333-333333333337"));
         builder.notify(deviceInfo, true);
         return this;

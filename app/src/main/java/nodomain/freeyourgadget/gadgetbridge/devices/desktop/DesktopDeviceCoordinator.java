@@ -1,4 +1,4 @@
-package nodomain.freeyourgadget.gadgetbridge.devices.macosx;
+package nodomain.freeyourgadget.gadgetbridge.devices.desktop;
 
 import android.app.Activity;
 import android.content.Context;
@@ -18,10 +18,10 @@ import nodomain.freeyourgadget.gadgetbridge.impl.GBDeviceCandidate;
 import nodomain.freeyourgadget.gadgetbridge.model.ActivitySample;
 import nodomain.freeyourgadget.gadgetbridge.model.DeviceType;
 
-public class MacOSXDeviceCoordinator extends AbstractDeviceCoordinator {
+public class DesktopDeviceCoordinator extends AbstractDeviceCoordinator {
     @Override
     public DeviceType getDeviceType() {
-        return DeviceType.MACOSX;
+        return DeviceType.DESKTOP;
     }
 
     @Nullable
@@ -72,7 +72,7 @@ public class MacOSXDeviceCoordinator extends AbstractDeviceCoordinator {
 
     @Override
     public String getManufacturer() {
-        return "Apple";
+        return "Various";
     }
 
     @Override
@@ -89,10 +89,10 @@ public class MacOSXDeviceCoordinator extends AbstractDeviceCoordinator {
     public DeviceType getSupportedType(GBDeviceCandidate candidate) {
         String name = candidate.getDevice().getName();
         Log.i("TESTER", candidate.getDevice().toString());
-        if (name != null && name.startsWith("GadgetBridge")) {
+        if (name != null && name.startsWith("GadgetBridgeDesktop")) {
         //if (candidate.getDevice().toString().equals("DC:A9:04:87:66:29")) {
             Log.i("TESTER", "GOT HERE");
-            return DeviceType.MACOSX;
+            return DeviceType.DESKTOP;
         }
         return DeviceType.UNKNOWN;
     }

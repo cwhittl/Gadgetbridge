@@ -39,7 +39,7 @@ import nodomain.freeyourgadget.gadgetbridge.service.devices.huami.miband3.MiBand
 import nodomain.freeyourgadget.gadgetbridge.service.devices.id115.ID115Support;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.jyou.TeclastH30Support;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.liveview.LiveviewSupport;
-import nodomain.freeyourgadget.gadgetbridge.service.devices.macosx.MacOSXDeviceSupport;
+import nodomain.freeyourgadget.gadgetbridge.service.devices.desktop.DesktopDeviceSupport;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.miband.MiBandSupport;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.no1f1.No1F1Support;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.pebble.PebbleSupport;
@@ -177,8 +177,8 @@ public class DeviceSupportFactory {
                     case CASIOGB6900:
                         deviceSupport = new ServiceDeviceSupport(new CasioGB6900DeviceSupport(), EnumSet.of(ServiceDeviceSupport.Flags.BUSY_CHECKING));
                         break;
-                    case MACOSX:
-                        deviceSupport = new ServiceDeviceSupport(new MacOSXDeviceSupport(), EnumSet.of(ServiceDeviceSupport.Flags.BUSY_CHECKING));
+                    case DESKTOP:
+                        deviceSupport = new ServiceDeviceSupport(new DesktopDeviceSupport(), EnumSet.of(ServiceDeviceSupport.Flags.BUSY_CHECKING));
                         break;
                 }
                 if (deviceSupport != null) {

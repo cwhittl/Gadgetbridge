@@ -54,7 +54,7 @@ import nodomain.freeyourgadget.gadgetbridge.devices.huami.miband3.MiBand3Coordin
 import nodomain.freeyourgadget.gadgetbridge.devices.id115.ID115Coordinator;
 import nodomain.freeyourgadget.gadgetbridge.devices.jyou.TeclastH30Coordinator;
 import nodomain.freeyourgadget.gadgetbridge.devices.liveview.LiveviewCoordinator;
-import nodomain.freeyourgadget.gadgetbridge.devices.macosx.MacOSXDeviceCoordinator;
+import nodomain.freeyourgadget.gadgetbridge.devices.desktop.DesktopDeviceCoordinator;
 import nodomain.freeyourgadget.gadgetbridge.devices.miband.MiBandConst;
 import nodomain.freeyourgadget.gadgetbridge.devices.miband.MiBandCoordinator;
 import nodomain.freeyourgadget.gadgetbridge.devices.no1f1.No1F1Coordinator;
@@ -219,7 +219,7 @@ public class DeviceHelper {
         result.add(new Roidmi1Coordinator());
         result.add(new Roidmi3Coordinator());
         result.add(new CasioGB6900DeviceCoordinator());
-        result.add(new MacOSXDeviceCoordinator());
+        result.add(new DesktopDeviceCoordinator());
         return result;
     }
 
