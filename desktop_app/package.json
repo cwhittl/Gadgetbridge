@@ -1,0 +1,16 @@
+{
+  "name": "secure-notify-desktop",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Chris Whittle <cwhittl@gmail.com> (https://whittlecorn.com)",
+  "license": "ISC",
+  "dependencies": {
+    "bleno": "github:notjosh/bleno#inject-bindings",
+    "bleno-mac": "github:notjosh/bleno-mac",
+    "node-notifier": "^5.4.0"
+  }
+}
