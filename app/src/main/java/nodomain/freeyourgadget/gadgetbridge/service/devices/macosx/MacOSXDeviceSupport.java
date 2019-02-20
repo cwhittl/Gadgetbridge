@@ -21,9 +21,13 @@ import android.bluetooth.BluetoothGattCharacteristic;
 import android.content.Intent;
 import android.net.Uri;
 
+import org.json.JSONException;
+import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.UUID;
 
@@ -38,41 +42,31 @@ import nodomain.freeyourgadget.gadgetbridge.model.MusicStateSpec;
 import nodomain.freeyourgadget.gadgetbridge.model.NotificationSpec;
 import nodomain.freeyourgadget.gadgetbridge.model.WeatherSpec;
 import nodomain.freeyourgadget.gadgetbridge.service.btle.AbstractBTLEDeviceSupport;
+import nodomain.freeyourgadget.gadgetbridge.service.btle.GattService;
+import nodomain.freeyourgadget.gadgetbridge.service.btle.profiles.alertnotification.AlertCategory;
 import nodomain.freeyourgadget.gadgetbridge.service.btle.TransactionBuilder;
 import nodomain.freeyourgadget.gadgetbridge.service.btle.actions.SetDeviceStateAction;
 import nodomain.freeyourgadget.gadgetbridge.service.btle.profiles.IntentListener;
 import nodomain.freeyourgadget.gadgetbridge.service.btle.profiles.deviceinfo.DeviceInfoProfile;
+import nodomain.freeyourgadget.gadgetbridge.util.StringUtils;
 
 public class MacOSXDeviceSupport extends AbstractBTLEDeviceSupport {
     private static final Logger LOG = LoggerFactory.getLogger(MacOSXDeviceSupport.class);
-    private final DeviceInfoProfile<MacOSXDeviceSupport> deviceInfoProfile;
     private final GBDeviceEventVersionInfo versionCmd = new GBDeviceEventVersionInfo();
-
-    private final IntentListener mListener = new IntentListener() {
-        @Override
-        public void notify(Intent intent) {
-            String s = intent.getAction();
-            if (s.equals(DeviceInfoProfile.ACTION_DEVICE_INFO)) {
-                handleDeviceInfo((nodomain.freeyourgadget.gadgetbridge.service.btle.profiles.deviceinfo.DeviceInfo) intent.getParcelableExtra(DeviceInfoProfile.EXTRA_DEVICE_INFO));
-            }
-        }
-    };
 
     public MacOSXDeviceSupport() {
         super(LOG);
         addSupportedService(UUID.fromString("13333333-3333-3333-3333-333333333337"));
-
-        deviceInfoProfile = new DeviceInfoProfile<>(this);
-        deviceInfoProfile.addListener(mListener);
-        addSupportedProfile(deviceInfoProfile);
+        addSupportedService(GattService.UUID_SERVICE_IMMEDIATE_ALERT);
     }
 
     @Override
     protected TransactionBuilder initializeDevice(TransactionBuilder builder) {
         builder.add(new SetDeviceStateAction(getDevice(), GBDevice.State.INITIALIZING, getContext()));
-
+        builder.setGattCallback(this);
         enableNotifications(builder, true)
                 .setInitialized(builder);
+
         return builder;
     }
 
@@ -92,16 +86,31 @@ public class MacOSXDeviceSupport extends AbstractBTLEDeviceSupport {
         return true;
     }
 
-    private void handleDeviceInfo(nodomain.freeyourgadget.gadgetbridge.service.btle.profiles.deviceinfo.DeviceInfo info) {
-        LOG.warn("Device info: " + info);
-        versionCmd.hwVersion = info.getHardwareRevision();
-        versionCmd.fwVersion = info.getFirmwareRevision();
-        handleGBDeviceEvent(versionCmd);
-    }
-
     @Override
     public void onNotification(NotificationSpec notificationSpec) {
-        LOG.debug("notificationSpec: " + notificationSpec);
+        LOG.debug("NOTIFICATION!");
+        String notificationTitle = StringUtils.getFirstOf(notificationSpec.sender, notificationSpec.title);
+        showNotification( notificationTitle, notificationSpec.body, notificationSpec.type.toString());
+    }
+
+    private void showNotification(String title, String message, String type) {
+        try {
+            TransactionBuilder builder = performInitialized("showNotification");
+            JSONObject obj = new JSONObject();
+            obj.put("title", title);
+            obj.put("message", message);
+            obj.put("type", type);
+
+            byte[] msg = obj.toString().getBytes("utf-8");
+
+            builder.write(getCharacteristic(UUID.fromString("13333333-3333-3333-3333-333333333337")), msg);
+            LOG.info("Showing notification, title: " + title + " message (not sent): " + message);
+            builder.queue(getQueue());
+        } catch (IOException e) {
+            LOG.warn("showNotification failed: " + e.getMessage());
+        } catch (JSONException e) {
+            LOG.warn("showNotification failed: " + e.getMessage());
+        }
     }
 
     @Override
@@ -121,7 +130,8 @@ public class MacOSXDeviceSupport extends AbstractBTLEDeviceSupport {
 
     @Override
     public void onSetCallState(CallSpec callSpec) {
-
+        LOG.debug("CALL!");
+        showNotification( callSpec.name, callSpec.number, "Incoming Call");
     }
 
     @Override
