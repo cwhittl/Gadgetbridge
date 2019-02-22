@@ -25,6 +25,7 @@ import android.net.Uri;
 import android.provider.Telephony;
 
 import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -32,10 +33,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.lang.reflect.Type;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.Map;
 import java.util.UUID;
 
 import nodomain.freeyourgadget.gadgetbridge.devices.DeviceCoordinator;
@@ -59,7 +62,7 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
     private static final Logger LOG = LoggerFactory.getLogger(DesktopDeviceSupport.class);
     private final UUID deviceService = UUID.fromString("13333333-3333-3333-3333-800000000000");
     private final UUID messageSyncCharacteristic = UUID.fromString("13333333-3333-3333-3333-800000000001");
-    private final UUID notificationCharacteristic = UUID.fromString("13333333-3333-3333-3333-7000000000002");
+    private final UUID notificationCharacteristic = UUID.fromString("13333333-3333-3333-3333-800000000002");
 
     private boolean isMusicAppStarted = false;
     private MusicSpec bufferMusicSpec = null;
@@ -117,21 +120,6 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
     }
 
     @Override
-    public void onDeleteNotification(int id) {
-
-    }
-
-    @Override
-    public void onSetTime() {
-
-    }
-
-    @Override
-    public void onSetAlarms(ArrayList<? extends Alarm> alarms) {
-
-    }
-
-    @Override
     public void onSetCallState(CallSpec callSpec) {
         LOG.debug("CALL!");
         String title = callSpec.name;
@@ -147,10 +135,6 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
         }
     }
 
-    @Override
-    public void onSetCannedMessages(CannedMessagesSpec cannedMessagesSpec) {
-
-    }
 
     @Override
     public void onSetMusicState(MusicStateSpec stateSpec) {
@@ -194,6 +178,102 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
             builder.queue(getQueue());
         } catch (IOException e) {
             LOG.warn("showNotification failed: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public boolean onCharacteristicChanged(BluetoothGatt gatt,
+                                           BluetoothGattCharacteristic characteristic) {
+        super.onCharacteristicChanged(gatt, characteristic);
+        try {
+            TransactionBuilder builder = performInitialized("messageSync");
+            LOG.info("Characteristic Change " + characteristic.getUuid());
+            UUID characteristicUUID = characteristic.getUuid();
+            if (messageSyncCharacteristic.equals(characteristicUUID)) {
+                String value = new String(characteristic.getValue(), "UTF-8");
+                LOG.info(value);
+                Type type = new TypeToken<Map<String, String>>(){}.getType();
+                Map<String, String> response = new Gson().fromJson(value, type);
+                String strLastId = response.get("sync");
+                if(strLastId != null) {
+                    // getAllSms(getContext(), builder, strLastID);
+                }
+
+            } else {
+                LOG.info("Unhandled characteristic changed: " + characteristicUUID);
+                logMessageContent(characteristic.getValue());
+            }
+        } catch (IOException e) {
+            LOG.warn("showNotification failed: " + e.getMessage());
+        }
+        return false;
+
+    }
+
+    @Override
+    public boolean onCharacteristicRead(BluetoothGatt gatt,
+                                        BluetoothGattCharacteristic characteristic, int status) {
+        return super.onCharacteristicRead(gatt, characteristic, status);
+        //TODO: Implement (if necessary)
+    }
+
+    @Override
+    public boolean onCharacteristicWrite(BluetoothGatt gatt,
+                                         BluetoothGattCharacteristic characteristic, int status) {
+        return super.onCharacteristicWrite(gatt, characteristic, status);
+        //TODO: Implement (if necessary)
+    }
+
+    public void getAllSms(Context context, TransactionBuilder builder, String lastID) {
+        LOG.info(lastID);
+        ContentResolver cr = context.getContentResolver();
+        try{
+            int totalSMS = 0;
+            String selection = null;
+            if (lastID != "") {
+                selection = "_ID > " + lastID;
+            }
+            Cursor c = cr.query(Telephony.Sms.CONTENT_URI, null, selection, null, Telephony.Sms.Inbox.DEFAULT_SORT_ORDER);
+            if (c != null) {
+                totalSMS = c.getCount();
+                if (c.moveToFirst()) {
+                    for (int j = 0; j < totalSMS; j++) {
+                        JSONObject obj = new JSONObject();
+                        obj.put("id", c.getString(c.getColumnIndexOrThrow(Telephony.Sms._ID)));
+                        String smsDate = c.getString(c.getColumnIndexOrThrow(Telephony.Sms.DATE));
+                        obj.put("number",c.getString(c.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)));
+                        obj.put("body", c.getString(c.getColumnIndexOrThrow(Telephony.Sms.BODY)));
+                        obj.put("dateFormat", smsDate);
+                        String type = "";
+                        switch (Integer.parseInt(c.getString(c.getColumnIndexOrThrow(Telephony.Sms.TYPE)))) {
+                            case Telephony.Sms.MESSAGE_TYPE_INBOX:
+                                type = "inbox";
+                                break;
+                            case Telephony.Sms.MESSAGE_TYPE_SENT:
+                                type = "sent";
+                                break;
+                            case Telephony.Sms.MESSAGE_TYPE_OUTBOX:
+                                type = "outbox";
+                                break;
+                            default:
+                                break;
+                        }
+                        obj.put("type", type);
+                        byte[] msg = new Gson().toJson(obj.toString()).getBytes("utf-8");
+                        builder.write(getCharacteristic(messageSyncCharacteristic),msg);
+                        c.moveToNext();
+                    }
+                }
+                builder.queue(getQueue());
+                c.close();
+
+            } else {
+                LOG.info("No message to show!");
+            }
+        } catch (IOException e) {
+            LOG.warn("showNotification failed: " + e.getMessage());
+        } catch (JSONException e) {
+            e.printStackTrace();
         }
     }
 
@@ -298,96 +378,27 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
     }
 
     @Override
+    public void onSetCannedMessages(CannedMessagesSpec cannedMessagesSpec) {
+
+    }
+
+    @Override
     public void onSendWeather(WeatherSpec weatherSpec) {
 
     }
 
     @Override
-    public boolean onCharacteristicChanged(BluetoothGatt gatt,
-                                           BluetoothGattCharacteristic characteristic) {
-        super.onCharacteristicChanged(gatt, characteristic);
-        try {
-            TransactionBuilder builder = performInitialized("messageSync");
-            LOG.info("Characteristic Change " + characteristic.getUuid());
-            UUID characteristicUUID = characteristic.getUuid();
-            if (messageSyncCharacteristic.equals(characteristicUUID)) {
-                String strLastID = new String(characteristic.getValue(), "UTF-8");
-                getAllSms(getContext(), builder, strLastID);
-            } else {
-                LOG.info("Unhandled characteristic changed: " + characteristicUUID);
-                logMessageContent(characteristic.getValue());
-            }
-        } catch (IOException e) {
-            LOG.warn("showNotification failed: " + e.getMessage());
-        }
-        return false;
+    public void onDeleteNotification(int id) {
 
     }
 
     @Override
-    public boolean onCharacteristicRead(BluetoothGatt gatt,
-                                        BluetoothGattCharacteristic characteristic, int status) {
-        return super.onCharacteristicRead(gatt, characteristic, status);
-        //TODO: Implement (if necessary)
+    public void onSetTime() {
+
     }
 
     @Override
-    public boolean onCharacteristicWrite(BluetoothGatt gatt,
-                                         BluetoothGattCharacteristic characteristic, int status) {
-        return super.onCharacteristicWrite(gatt, characteristic, status);
-        //TODO: Implement (if necessary)
-    }
+    public void onSetAlarms(ArrayList<? extends Alarm> alarms) {
 
-    public void getAllSms(Context context, TransactionBuilder builder, String lastID) {
-        LOG.info(lastID);
-        ContentResolver cr = context.getContentResolver();
-        try{
-            int totalSMS = 0;
-            String selection = null;
-            if (lastID != "") {
-                selection = "_ID > " + lastID;
-            }
-            Cursor c = cr.query(Telephony.Sms.CONTENT_URI, null, selection, null, Telephony.Sms.Inbox.DEFAULT_SORT_ORDER);
-            if (c != null) {
-                totalSMS = c.getCount();
-                if (c.moveToFirst()) {
-                    for (int j = 0; j < totalSMS; j++) {
-                        JSONObject obj = new JSONObject();
-                        obj.put("id", c.getString(c.getColumnIndexOrThrow(Telephony.Sms._ID)));
-                        String smsDate = c.getString(c.getColumnIndexOrThrow(Telephony.Sms.DATE));
-                        obj.put("number",c.getString(c.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)));
-                        obj.put("body", c.getString(c.getColumnIndexOrThrow(Telephony.Sms.BODY)));
-                        obj.put("dateFormat", smsDate);
-                        String type = "";
-                        switch (Integer.parseInt(c.getString(c.getColumnIndexOrThrow(Telephony.Sms.TYPE)))) {
-                            case Telephony.Sms.MESSAGE_TYPE_INBOX:
-                                type = "inbox";
-                                break;
-                            case Telephony.Sms.MESSAGE_TYPE_SENT:
-                                type = "sent";
-                                break;
-                            case Telephony.Sms.MESSAGE_TYPE_OUTBOX:
-                                type = "outbox";
-                                break;
-                            default:
-                                break;
-                        }
-                        obj.put("type", type);
-                        byte[] msg = new Gson().toJson(obj.toString()).getBytes("utf-8");
-                        builder.write(getCharacteristic(messageSyncCharacteristic),msg);
-                        c.moveToNext();
-                    }
-                }
-                builder.queue(getQueue());
-                c.close();
-
-            } else {
-                LOG.info("No message to show!");
-            }
-        } catch (IOException e) {
-            LOG.warn("showNotification failed: " + e.getMessage());
-        } catch (JSONException e) {
-            e.printStackTrace();
-        }
     }
 }
