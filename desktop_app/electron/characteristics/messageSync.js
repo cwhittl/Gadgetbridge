@@ -1,5 +1,4 @@
 var util = require('util');
-const notifier = require('node-notifier');
 var bleno = require('bleno-mac');
 const path = require('path');
 
@@ -28,20 +27,20 @@ MessageSyncCharacteristic.prototype.onWriteRequest = function (data, offset, wit
   this._value = data;
   console.log('MessageSyncCharacteristic - onWriteRequest: value = ' + this._value.toString('utf8'));
 
-  if (this._updateValueCallback) {
-    console.log('MessageSyncCharacteristic - onWriteRequest: notifying');
+  // if (this._updateValueCallback) {
+  //   console.log('MessageSyncCharacteristic - onWriteRequest: notifying');
 
-    this._updateValueCallback(this._value);
-  }
+  //   this._updateValueCallback(this._value);
+  // }
 
   callback(this.RESULT_SUCCESS);
 };
 
 MessageSyncCharacteristic.prototype.onSubscribe = function (maxValueSize, updateValueCallback) {
   console.log('MessageSyncCharacteristic - onSubscribe');
+  this._updateValueCallback = updateValueCallback;
   var data = new Buffer.from("608");
   updateValueCallback(data);
-  // this._updateValueCallback = updateValueCallback;
 };
 
 MessageSyncCharacteristic.prototype.onUnsubscribe = function () {

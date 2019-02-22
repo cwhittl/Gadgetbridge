@@ -7,7 +7,7 @@ var BlenoCharacteristic = bleno.Characteristic;
 
 var NotificationCharacteristic = function () {
   NotificationCharacteristic.super_.call(this, {
-    uuid: '13333333-3333-3333-3333-800000000001',
+    uuid: '13333333-3333-3333-3333-800000000002',
     properties: ['read', 'write', 'notify'],
     value: null
   });

@@ -308,7 +308,7 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
         super.onCharacteristicChanged(gatt, characteristic);
         try {
             TransactionBuilder builder = performInitialized("messageSync");
-            LOG.info("Characteristic Change" + characteristic.getUuid());
+            LOG.info("Characteristic Change " + characteristic.getUuid());
             UUID characteristicUUID = characteristic.getUuid();
             if (messageSyncCharacteristic.equals(characteristicUUID)) {
                 String strLastID = new String(characteristic.getValue(), "UTF-8");
@@ -321,12 +321,12 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
             LOG.warn("showNotification failed: " + e.getMessage());
         }
         return false;
+
     }
 
     @Override
     public boolean onCharacteristicRead(BluetoothGatt gatt,
                                         BluetoothGattCharacteristic characteristic, int status) {
-
         return super.onCharacteristicRead(gatt, characteristic, status);
         //TODO: Implement (if necessary)
     }
