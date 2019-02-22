@@ -4,19 +4,21 @@ var bleno = require('bleno-mac');
 
 var NotificiationCharacteristic = require('./characteristics/notification');
 var MessageSyncCharacteristic = require('./characteristics/messageSync');
-
+var messageSync = null;
 function GadgetBridgeService(config) {
+  messageSync = new MessageSyncCharacteristic(config);
   bleno.PrimaryService.call(this, {
     uuid: '13333333-3333-3333-3333-800000000000',
     characteristics: [
       new NotificiationCharacteristic(config),
-      new MessageSyncCharacteristic(config),
+      messageSync,
     ]
   });
 }
+
 // setTimeout(() => {
-//   var data = new Buffer.from("608");
-//   messageSync.updateValue(data);
+//   var data = new Buffer.from("TEST");
+//   messageSync.write(data);
 // }, 10000)
 
 
