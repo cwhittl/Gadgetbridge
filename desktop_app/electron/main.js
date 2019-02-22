@@ -1,7 +1,10 @@
 var menubar = require('menubar')
 var bleno = require('bleno-mac');
 var GadgetBridgeService = require('./service');
-var gadgetBridgeService = new GadgetBridgeService();
+const config = {
+  iconsDir: __dirname + '/icons/',
+}
+var gadgetBridgeService = new GadgetBridgeService(config);
 var mb = menubar({ icon: './icons/IconTemplate.png', width: 150, height: 60 })
 mb.on('ready', function ready () {
   // console.log('app is ready')

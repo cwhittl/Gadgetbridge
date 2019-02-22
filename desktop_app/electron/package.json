@@ -3,10 +3,11 @@
   "version": "1.0.0",
   "description": "Connect your phone to your desktop",
   "dependencies": {
-    "menubar": "5.2.3",
     "bleno": "github:notjosh/bleno#inject-bindings",
     "bleno-mac": "github:notjosh/bleno-mac",
-    "node-notifier": "^5.4.0"
+    "menubar": "5.2.3",
+    "node-notifier": "^5.4.0",
+    "object-byte-converter": "^0.0.6"
   },
   "devDependencies": {
     "electron": "^5.0.0-beta.3"

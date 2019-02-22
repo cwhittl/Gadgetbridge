@@ -5,13 +5,13 @@ const path = require('path');
 
 var BlenoCharacteristic = bleno.Characteristic;
 
-var NotificationCharacteristic = function () {
+var NotificationCharacteristic = function (config) {
   NotificationCharacteristic.super_.call(this, {
     uuid: '13333333-3333-3333-3333-800000000002',
     properties: ['read', 'write', 'notify'],
     value: null
   });
-
+  this.config = config;
   this._value = new Buffer(0);
   this._updateValueCallback = null;
 };
@@ -32,7 +32,7 @@ NotificationCharacteristic.prototype.onWriteRequest = function (data, offset, wi
   const dataAsObject = JSON.parse(dataAsString);
   console.log(dataAsObject.title);
   const noficationObj = {
-    icon: path.join(__dirname, 'icons/iconOrig.png'),
+    icon: path.join(this.config.iconsDir, 'iconOrig.png'),
   };
   if (({}).hasOwnProperty.call(dataAsObject, 'number')) {
     noficationObj.title = dataAsObject.name;
@@ -55,7 +55,7 @@ NotificationCharacteristic.prototype.onWriteRequest = function (data, offset, wi
 NotificationCharacteristic.prototype.onSubscribe = function (maxValueSize, updateValueCallback) {
   console.log('NotificationCharacteristic - onSubscribe');
   notifier.notify({
-    icon: path.join(__dirname, 'icons/iconOrig.png'),
+    icon: path.join(this.config.iconsDir, 'iconOrig.png'),
     message: 'GadgetBridge Connected',
   });
   this._updateValueCallback = updateValueCallback;
@@ -64,7 +64,7 @@ NotificationCharacteristic.prototype.onSubscribe = function (maxValueSize, updat
 NotificationCharacteristic.prototype.onUnsubscribe = function () {
   console.log('NotificationCharacteristic - onUnsubscribe');
   notifier.notify({
-    icon: path.join(__dirname, 'icons/iconOrig.png'),
+    icon: path.join(this.config.iconsDir, 'iconOrig.png'),
     message: 'GadgetBridge Disconnected',
   });
   this._updateValueCallback = null;
