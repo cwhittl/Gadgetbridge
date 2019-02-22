@@ -4,17 +4,19 @@ var bleno = require('bleno-mac');
 
 var BlenoPrimaryService = bleno.PrimaryService;
 
-var NotificationCharacteristic = require('./characteristic');
+var NotificiationCharacteristic = require('./characteristics/notification');
+var MessageSyncCharacteristic = require('./characteristics/messageSync');
 
-function NotificationService() {
-  NotificationService.super_.call(this, {
-    uuid: '13333333-3333-3333-3333-333333333337',
+function GadgetBridgeService() {
+  GadgetBridgeService.super_.call(this, {
+    uuid: '13333333-3333-3333-3333-800000000000',
     characteristics: [
-      new NotificationCharacteristic()
+      new NotificiationCharacteristic(),
+      new MessageSyncCharacteristic()
     ]
   });
 }
 
-util.inherits(NotificationService, BlenoPrimaryService);
+util.inherits(GadgetBridgeService, BlenoPrimaryService);
 
-module.exports = NotificationService;
+module.exports = GadgetBridgeService;

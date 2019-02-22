@@ -677,7 +677,7 @@ public class NotificationListener extends NotificationListenerService {
 
     private boolean shouldIgnoreSource(String source) {
         Prefs prefs = GBApplication.getPrefs();
-
+        LOG.info(source);
         /* do not display messages from "android"
          * This includes keyboard selection message, usb connection messages, etc
          * Hope it does not filter out too much, we will see...

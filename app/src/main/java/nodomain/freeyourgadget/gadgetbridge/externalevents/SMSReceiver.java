@@ -26,6 +26,11 @@ import android.os.Bundle;
 import android.os.PowerManager;
 import android.telephony.SmsMessage;
 
+import com.google.gson.Gson;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -36,9 +41,13 @@ import nodomain.freeyourgadget.gadgetbridge.model.NotificationType;
 import nodomain.freeyourgadget.gadgetbridge.util.Prefs;
 
 public class SMSReceiver extends BroadcastReceiver {
-
+    private static final Logger LOG = LoggerFactory.getLogger(SMSReceiver.class);
     @Override
     public void onReceive(Context context, Intent intent) {
+//        LOG.debug("---CONTEXT---");
+//        LOG.debug(new Gson().toJson(context.));
+//        LOG.debug("---INTENT---");
+//        LOG.debug(new Gson().toJson(intent));
         Prefs prefs = GBApplication.getPrefs();
         if ("never".equals(prefs.getString("notification_mode_sms", "when_screen_off"))) {
             return;

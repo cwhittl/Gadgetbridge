@@ -88,10 +88,7 @@ public class DesktopDeviceCoordinator extends AbstractDeviceCoordinator {
     @Override
     public DeviceType getSupportedType(GBDeviceCandidate candidate) {
         String name = candidate.getDevice().getName();
-        Log.i("TESTER", candidate.getDevice().toString());
         if (name != null && name.startsWith("GadgetBridgeDesktop")) {
-        //if (candidate.getDevice().toString().equals("DC:A9:04:87:66:29")) {
-            Log.i("TESTER", "GOT HERE");
             return DeviceType.DESKTOP;
         }
         return DeviceType.UNKNOWN;
@@ -127,4 +124,9 @@ public class DesktopDeviceCoordinator extends AbstractDeviceCoordinator {
         return false;
     }
 
+    @Override
+    public boolean supportsMusicInfo() {
+        return true;
+    }
 }
+

@@ -18,7 +18,13 @@ package nodomain.freeyourgadget.gadgetbridge.service.devices.desktop;
 
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCharacteristic;
+import android.content.ContentResolver;
+import android.content.Context;
+import android.database.Cursor;
 import android.net.Uri;
+import android.provider.Telephony;
+
+import com.google.gson.Gson;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -26,10 +32,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.Charset;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.UUID;
 
-import nodomain.freeyourgadget.gadgetbridge.deviceevents.GBDeviceEventVersionInfo;
+import nodomain.freeyourgadget.gadgetbridge.devices.DeviceCoordinator;
 import nodomain.freeyourgadget.gadgetbridge.impl.GBDevice;
 import nodomain.freeyourgadget.gadgetbridge.model.Alarm;
 import nodomain.freeyourgadget.gadgetbridge.model.CalendarEventSpec;
@@ -43,15 +52,22 @@ import nodomain.freeyourgadget.gadgetbridge.service.btle.AbstractBTLEDeviceSuppo
 import nodomain.freeyourgadget.gadgetbridge.service.btle.GattService;
 import nodomain.freeyourgadget.gadgetbridge.service.btle.TransactionBuilder;
 import nodomain.freeyourgadget.gadgetbridge.service.btle.actions.SetDeviceStateAction;
+import nodomain.freeyourgadget.gadgetbridge.util.DeviceHelper;
 import nodomain.freeyourgadget.gadgetbridge.util.StringUtils;
 
 public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
     private static final Logger LOG = LoggerFactory.getLogger(DesktopDeviceSupport.class);
-    private final GBDeviceEventVersionInfo versionCmd = new GBDeviceEventVersionInfo();
+    private final UUID deviceService = UUID.fromString("13333333-3333-3333-3333-800000000000");
+    private final UUID messageSyncCharacteristic = UUID.fromString("13333333-3333-3333-3333-800000000001");
+    private final UUID notificationCharacteristic = UUID.fromString("13333333-3333-3333-3333-7000000000002");
+
+    private boolean isMusicAppStarted = false;
+    private MusicSpec bufferMusicSpec = null;
+    private MusicStateSpec bufferMusicStateSpec = null;
 
     public DesktopDeviceSupport() {
         super(LOG);
-        addSupportedService(UUID.fromString("13333333-3333-3333-3333-333333333337"));
+        addSupportedService(deviceService);
         addSupportedService(GattService.UUID_SERVICE_IMMEDIATE_ALERT);
     }
 
@@ -66,8 +82,10 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
     }
 
     public DesktopDeviceSupport enableNotifications(TransactionBuilder builder, boolean enable) {
-        BluetoothGattCharacteristic deviceInfo = getCharacteristic(UUID.fromString( "13333333-3333-3333-3333-333333333337"));
-        builder.notify(deviceInfo, true);
+        BluetoothGattCharacteristic notificationInfo = getCharacteristic(notificationCharacteristic);
+        builder.notify(notificationInfo, true);
+        BluetoothGattCharacteristic messageSync = getCharacteristic(messageSyncCharacteristic);
+        builder.notify(messageSync, true);
         return this;
     }
 
@@ -84,26 +102,16 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
     @Override
     public void onNotification(NotificationSpec notificationSpec) {
         LOG.debug("NOTIFICATION!");
-        String notificationTitle = StringUtils.getFirstOf(notificationSpec.sender, notificationSpec.title);
-        showNotification( notificationTitle, notificationSpec.body, notificationSpec.type.toString());
-    }
-
-    private void showNotification(String title, String message, String type) {
+        String title = StringUtils.getFirstOf(notificationSpec.sender, notificationSpec.title);
+        String message = notificationSpec.body;
         try {
             TransactionBuilder builder = performInitialized("showNotification");
-            JSONObject obj = new JSONObject();
-            obj.put("title", title);
-            obj.put("message", message);
-            obj.put("type", type);
+            byte[] msg = new Gson().toJson(notificationSpec).getBytes("utf-8");
 
-            byte[] msg = obj.toString().getBytes("utf-8");
-
-            builder.write(getCharacteristic(UUID.fromString("13333333-3333-3333-3333-333333333337")), msg);
-            LOG.info("Showing notification, title: " + title + " message (not sent): " + message);
+            builder.write(getCharacteristic(notificationCharacteristic), msg);
+            LOG.info("Showing notification, title: " + title + " message: " + message);
             builder.queue(getQueue());
         } catch (IOException e) {
-            LOG.warn("showNotification failed: " + e.getMessage());
-        } catch (JSONException e) {
             LOG.warn("showNotification failed: " + e.getMessage());
         }
     }
@@ -126,7 +134,17 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
     @Override
     public void onSetCallState(CallSpec callSpec) {
         LOG.debug("CALL!");
-        showNotification( callSpec.name, callSpec.number, "Incoming Call");
+        String title = callSpec.name;
+        String message = callSpec.number;
+        try {
+            TransactionBuilder builder = performInitialized("setCallState");
+            byte[] msg = new Gson().toJson(callSpec).getBytes("utf-8");
+            builder.write(getCharacteristic(notificationCharacteristic), msg);
+            LOG.info("Showing notification, title: " + title + " message: " + message);
+            builder.queue(getQueue());
+        } catch (IOException e) {
+            LOG.warn("showNotification failed: " + e.getMessage());
+        }
     }
 
     @Override
@@ -136,12 +154,47 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
 
     @Override
     public void onSetMusicState(MusicStateSpec stateSpec) {
+        DeviceCoordinator coordinator = DeviceHelper.getInstance().getCoordinator(gbDevice);
+        if (!coordinator.supportsMusicInfo()) {
+            return;
+        }
+
+        if (bufferMusicStateSpec != stateSpec) {
+            bufferMusicStateSpec = stateSpec;
+            sendMusicStateToDevice();
+        }
 
     }
 
     @Override
     public void onSetMusicInfo(MusicSpec musicSpec) {
+        DeviceCoordinator coordinator = DeviceHelper.getInstance().getCoordinator(gbDevice);
+        if (!coordinator.supportsMusicInfo()) {
+            return;
+        }
 
+        if (bufferMusicSpec != musicSpec) {
+            bufferMusicSpec = musicSpec;
+            sendMusicStateToDevice();
+        }
+
+    }
+
+
+    private void sendMusicStateToDevice() {
+        LOG.debug("MUSIC!");
+
+        String title = bufferMusicSpec.artist;
+        String message = bufferMusicSpec.track;
+        try {
+            TransactionBuilder builder = performInitialized("sendMusic");
+            byte[] msg = new Gson().toJson(bufferMusicSpec).getBytes("utf-8");
+            builder.write(getCharacteristic(notificationCharacteristic), msg);
+            LOG.info("Showing notification, title: " + title + " message: " + message);
+            builder.queue(getQueue());
+        } catch (IOException e) {
+            LOG.warn("showNotification failed: " + e.getMessage());
+        }
     }
 
     @Override
@@ -253,33 +306,28 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
     public boolean onCharacteristicChanged(BluetoothGatt gatt,
                                            BluetoothGattCharacteristic characteristic) {
         super.onCharacteristicChanged(gatt, characteristic);
-
-        UUID characteristicUUID = characteristic.getUuid();
-//        if (XWatchService.UUID_NOTIFY.equals(characteristicUUID)) {
-//            byte[] data = characteristic.getValue();
-//            if (data[0] == XWatchService.COMMAND_ACTIVITY_TOTALS) {
-//                handleSummarizedData(characteristic.getValue());
-//            } else if (data[0] == XWatchService.COMMAND_ACTIVITY_DATA) {
-//                handleDetailedData(characteristic.getValue());
-//            } else if (data[0] == XWatchService.COMMAND_ACTION_BUTTON) {
-//                handleButtonPressed(characteristic.getValue());
-//            } else if (data[0] == XWatchService.COMMAND_CONNECTED) {
-//                handleDeviceInfo(data, BluetoothGatt.GATT_SUCCESS);
-//            } else {
-//                LOG.info("Handled characteristic with unknown data: " + characteristicUUID);
-//                logMessageContent(characteristic.getValue());
-//            }
-//        } else {
-            LOG.info("Unhandled characteristic changed: " + characteristicUUID);
-            logMessageContent(characteristic.getValue());
-//        }
+        try {
+            TransactionBuilder builder = performInitialized("messageSync");
+            LOG.info("Characteristic Change" + characteristic.getUuid());
+            UUID characteristicUUID = characteristic.getUuid();
+            if (messageSyncCharacteristic.equals(characteristicUUID)) {
+                String strLastID = new String(characteristic.getValue(), "UTF-8");
+                getAllSms(getContext(), builder, strLastID);
+            } else {
+                LOG.info("Unhandled characteristic changed: " + characteristicUUID);
+                logMessageContent(characteristic.getValue());
+            }
+        } catch (IOException e) {
+            LOG.warn("showNotification failed: " + e.getMessage());
+        }
         return false;
     }
 
     @Override
     public boolean onCharacteristicRead(BluetoothGatt gatt,
                                         BluetoothGattCharacteristic characteristic, int status) {
-        return super.onCharacteristicChanged(gatt, characteristic);
+
+        return super.onCharacteristicRead(gatt, characteristic, status);
         //TODO: Implement (if necessary)
     }
 
@@ -288,5 +336,58 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
                                          BluetoothGattCharacteristic characteristic, int status) {
         return super.onCharacteristicWrite(gatt, characteristic, status);
         //TODO: Implement (if necessary)
+    }
+
+    public void getAllSms(Context context, TransactionBuilder builder, String lastID) {
+        LOG.info(lastID);
+        ContentResolver cr = context.getContentResolver();
+        try{
+            int totalSMS = 0;
+            String selection = null;
+            if (lastID != "") {
+                selection = "_ID > " + lastID;
+            }
+            Cursor c = cr.query(Telephony.Sms.CONTENT_URI, null, selection, null, Telephony.Sms.Inbox.DEFAULT_SORT_ORDER);
+            if (c != null) {
+                totalSMS = c.getCount();
+                if (c.moveToFirst()) {
+                    for (int j = 0; j < totalSMS; j++) {
+                        JSONObject obj = new JSONObject();
+                        obj.put("id", c.getString(c.getColumnIndexOrThrow(Telephony.Sms._ID)));
+                        String smsDate = c.getString(c.getColumnIndexOrThrow(Telephony.Sms.DATE));
+                        obj.put("number",c.getString(c.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)));
+                        obj.put("body", c.getString(c.getColumnIndexOrThrow(Telephony.Sms.BODY)));
+                        obj.put("dateFormat", smsDate);
+                        String type = "";
+                        switch (Integer.parseInt(c.getString(c.getColumnIndexOrThrow(Telephony.Sms.TYPE)))) {
+                            case Telephony.Sms.MESSAGE_TYPE_INBOX:
+                                type = "inbox";
+                                break;
+                            case Telephony.Sms.MESSAGE_TYPE_SENT:
+                                type = "sent";
+                                break;
+                            case Telephony.Sms.MESSAGE_TYPE_OUTBOX:
+                                type = "outbox";
+                                break;
+                            default:
+                                break;
+                        }
+                        obj.put("type", type);
+                        byte[] msg = new Gson().toJson(obj.toString()).getBytes("utf-8");
+                        builder.write(getCharacteristic(messageSyncCharacteristic),msg);
+                        c.moveToNext();
+                    }
+                }
+                builder.queue(getQueue());
+                c.close();
+
+            } else {
+                LOG.info("No message to show!");
+            }
+        } catch (IOException e) {
+            LOG.warn("showNotification failed: " + e.getMessage());
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
     }
 }
