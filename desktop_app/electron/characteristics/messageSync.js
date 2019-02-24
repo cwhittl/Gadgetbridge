@@ -1,8 +1,8 @@
 var util = require('util');
+var Datastore = require('nedb'), 
+  messageDB = new Datastore({ filename: '../data/messages.db', autoload: true });
 
 var bleno = require('bleno-mac');
-const path = require('path');
-const objectByteConverter = require('object-byte-converter');
 
 var BlenoCharacteristic = bleno.Characteristic;
 
@@ -28,7 +28,13 @@ MessageSyncCharacteristic.prototype.onReadRequest = function (offset, callback) 
 MessageSyncCharacteristic.prototype.onWriteRequest = function (data, offset, withoutResponse, callback) {
   this._value = data;
   console.log('MessageSyncCharacteristic - onWriteRequest: value = ' + this._value.toString('utf8'));
-
+  const message = JSON.parse(JSON.parse(data.toString('utf8')));
+  messageDB.find({ id: message.id }, function (err, docs) {
+    if(docs.length === 0) {
+      console.log(message.id + ' NOT FOUND');
+      messageDB.insert(message);
+    }
+  });
   // if (this._updateValueCallback) {
   //   console.log('MessageSyncCharacteristic - onWriteRequest: notifying');
 
@@ -41,10 +47,16 @@ MessageSyncCharacteristic.prototype.onWriteRequest = function (data, offset, wit
 MessageSyncCharacteristic.prototype.onSubscribe = function (maxValueSize, updateValueCallback) {
   console.log('MessageSyncCharacteristic - onSubscribe - ' + maxValueSize);
   this._updateValueCallback = updateValueCallback;
-  var obj = { sync: 608 };
-  var data = new Buffer.from(JSON.stringify(obj), "utf-8");
-  console.log(data);
-  updateValueCallback(data);
+  messageDB
+    .find({})
+    .sort({ createdAt: -1 })      // OR `.sort({ updatedAt: -1 })` to sort by last modification time
+    .limit(1)
+    .exec(function (err, docs) {
+      var obj = { sync: docs[0].id };
+      var data = new Buffer.from(JSON.stringify(obj), "utf-8");
+      updateValueCallback(data);
+    });
+  
 };
 
 MessageSyncCharacteristic.prototype.onUnsubscribe = function () {

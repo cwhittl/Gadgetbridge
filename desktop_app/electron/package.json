@@ -6,6 +6,7 @@
     "bleno": "github:notjosh/bleno#inject-bindings",
     "bleno-mac": "github:notjosh/bleno-mac",
     "menubar": "5.2.3",
+    "nedb": "^1.8.0",
     "node-notifier": "^5.4.0",
     "object-byte-converter": "^0.0.6"
   },

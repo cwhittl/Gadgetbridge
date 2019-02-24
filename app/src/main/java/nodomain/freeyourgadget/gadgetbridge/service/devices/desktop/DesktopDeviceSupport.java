@@ -196,7 +196,7 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
                 Map<String, String> response = new Gson().fromJson(value, type);
                 String strLastId = response.get("sync");
                 if(strLastId != null) {
-                    // getAllSms(getContext(), builder, strLastID);
+                    getAllSms(getContext(), builder, strLastId);
                 }
 
             } else {
