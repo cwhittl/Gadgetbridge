@@ -1,7 +1,4 @@
 var util = require('util');
-var Datastore = require('nedb'), 
-  messageDB = new Datastore({ filename: '../data/messages.db', autoload: true });
-
 var bleno = require('bleno-mac');
 
 var BlenoCharacteristic = bleno.Characteristic;
@@ -12,61 +9,34 @@ var MessageSyncCharacteristic = function (config) {
     properties: ['read', 'write', 'notify'],
     value: null,
   });
-  this.io = config.io;
   this._value = new Buffer(0);
   this._updateValueCallback = null;
+  this._onSubscribe = typeof config.onSubscribe === "function" ? config.onSubscribe : () => { };
+  this._onUnsubscribe = typeof config.onUnsubscribe === "function" ? config.onUnsubscribe : () => { };
+  this._onWriteRequest = typeof config.onWriteRequest === "function" ? config.onWriteRequest : () => { };
+  this._onReadRequest = typeof config.onReadRequest === "function" ? config.onReadRequest : () => {};
 };
 
 util.inherits(MessageSyncCharacteristic, BlenoCharacteristic);
 
 MessageSyncCharacteristic.prototype.onReadRequest = function (offset, callback) {
-  console.log('MessageSyncCharacteristic - onReadRequest: value = ' + this._value.toString('hex'));
-
+  this._onReadRequest(offset, callback);
   callback(this.RESULT_SUCCESS, this._value);
 };
 
 MessageSyncCharacteristic.prototype.onWriteRequest = function (data, offset, withoutResponse, callback) {
-  this._value = data;
-  console.log('MessageSyncCharacteristic - onWriteRequest: value = ' + this._value.toString('utf8'));
-  const message = JSON.parse(JSON.parse(data.toString('utf8')));
-  messageDB.find({ id: message.id }, function (err, docs) {
-    if(docs.length === 0) {
-      console.log(message.id + ' NOT FOUND');
-      messageDB.insert(message);
-    }
-  });
-  this.io.emit('chat message', message.id);
-  // if (this._updateValueCallback) {
-  //   console.log('MessageSyncCharacteristic - onWriteRequest: notifying');
-
-  //   this._updateValueCallback(this._value);
-  // }
-
+  this._onWriteRequest(data, offset, withoutResponse, callback);
   callback(this.RESULT_SUCCESS);
 };
 
 MessageSyncCharacteristic.prototype.onSubscribe = function (maxValueSize, updateValueCallback) {
-  console.log('MessageSyncCharacteristic - onSubscribe - ' + maxValueSize);
+  this._onSubscribe(maxValueSize, updateValueCallback);
   this._updateValueCallback = updateValueCallback;
-  this.syncOldMessages();
-
 };
 
 MessageSyncCharacteristic.prototype.onUnsubscribe = function () {
-  console.log('MessageSyncCharacteristic - onUnsubscribe');
+  this._onUnsubscribe();
   this._updateValueCallback = null;
 };
-
-MessageSyncCharacteristic.prototype.syncOldMessages = function () {
-  messageDB
-    .find({})
-    .sort({ createdAt: -1 })      // OR `.sort({ updatedAt: -1 })` to sort by last modification time
-    .limit(1)
-    .exec((err, docs) => {
-      var obj = { sync: docs[0].id };
-      var data = new Buffer.from(JSON.stringify(obj), "utf-8");
-      this._updateValueCallback(data);
-    });
-}
 
 module.exports = MessageSyncCharacteristic;
