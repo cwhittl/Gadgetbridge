@@ -224,18 +224,19 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
         //TODO: Implement (if necessary)
     }
 
-    public void getAllSms(Context context, TransactionBuilder builder, String lastID) {
-        LOG.info(lastID);
+    public void getAllSms(Context context, TransactionBuilder builder, String strLastID) {
+        Integer lastID = Integer.parseInt(strLastID);
+        LOG.info(strLastID);
         ContentResolver cr = context.getContentResolver();
         try{
-            int totalSMS = 0;
+            int totalSMS = lastID;
             String selection = null;
-            if (lastID != "") {
-                selection = "_ID > " + lastID;
-            }
+//            if (lastID != "") {
+//                selection = "_ID > " + lastID;
+//            }
             Cursor c = cr.query(Telephony.Sms.CONTENT_URI, null, selection, null, Telephony.Sms.Inbox.DEFAULT_SORT_ORDER);
             if (c != null) {
-                totalSMS = c.getCount();
+                // totalSMS = c.getCount();
                 if (c.moveToFirst()) {
                     for (int j = 0; j < totalSMS; j++) {
                         JSONObject obj = new JSONObject();
