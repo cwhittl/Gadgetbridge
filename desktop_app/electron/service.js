@@ -49,7 +49,7 @@ var messageSyncConfig = {
 }
 
 var notificationConfig = {
-  onWriteRequest: function(data, offset, withoutResponse, callback) {
+  onWriteRequest(data, offset, withoutResponse, callback) {
     const dataAsString = data.toString('utf8');
     const dataAsObject = JSON.parse(dataAsString);
     console.log(dataAsObject.title);
@@ -65,7 +65,7 @@ var notificationConfig = {
     }
     notifier.notify(noficationObj);
   },
-  onSubscribe: (maxValueSize, updateValueCallback) => {
+  onSubscribe(maxValueSize, updateValueCallback) {
     notificationUpdateValueCallback = updateValueCallback;
     notifier.notify({
       icon: path.join(iconsDir, 'iconOrig.png'),
