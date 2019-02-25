@@ -1,8 +1,33 @@
+<!doctype html>
 <html>
+
 <head>
-<title>GadgetBridge Desktop</title>
+  <title>GadgetBridge Desktop</title>
 </head>
+
 <body>
-  Nothing to see here yet, come back soon
+  <ul id="messages">
+    
+  </ul>
+  <form action="">
+    <input id="m" autocomplete="off" /><button>Send</button>
+  </form>
+  <script src="https://cdn.socket.io/socket.io-1.2.0.js"></script>
+  <script src="https://code.jquery.com/jquery-1.11.1.js"></script>
+  <script>
+    $(function () {
+      var socket = io('http://localhost:3000');
+      $('form').submit(function () {
+        socket.emit('chat message', $('#m').val());
+        $('#m').val('');
+        return false;
+      });
+      socket.on('chat message', function (msg) {
+        $('#messages').append($('<li>').text(msg));
+        window.scrollTo(0, document.body.scrollHeight);
+      });
+    });
+  </script>
 </body>
+
 </html>

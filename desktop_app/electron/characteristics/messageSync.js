@@ -6,13 +6,13 @@ var bleno = require('bleno-mac');
 
 var BlenoCharacteristic = bleno.Characteristic;
 
-var MessageSyncCharacteristic = function () {
+var MessageSyncCharacteristic = function (config) {
   MessageSyncCharacteristic.super_.call(this, {
     uuid: '13333333-3333-3333-3333-800000000001',
     properties: ['read', 'write', 'notify'],
     value: null,
   });
-
+  this.io = config.io;
   this._value = new Buffer(0);
   this._updateValueCallback = null;
 };
@@ -35,6 +35,7 @@ MessageSyncCharacteristic.prototype.onWriteRequest = function (data, offset, wit
       messageDB.insert(message);
     }
   });
+  this.io.emit('chat message', message.id);
   // if (this._updateValueCallback) {
   //   console.log('MessageSyncCharacteristic - onWriteRequest: notifying');
 
@@ -47,21 +48,25 @@ MessageSyncCharacteristic.prototype.onWriteRequest = function (data, offset, wit
 MessageSyncCharacteristic.prototype.onSubscribe = function (maxValueSize, updateValueCallback) {
   console.log('MessageSyncCharacteristic - onSubscribe - ' + maxValueSize);
   this._updateValueCallback = updateValueCallback;
-  messageDB
-    .find({})
-    .sort({ createdAt: -1 })      // OR `.sort({ updatedAt: -1 })` to sort by last modification time
-    .limit(1)
-    .exec(function (err, docs) {
-      var obj = { sync: docs[0].id };
-      var data = new Buffer.from(JSON.stringify(obj), "utf-8");
-      updateValueCallback(data);
-    });
-  
+  this.syncOldMessages();
+
 };
 
 MessageSyncCharacteristic.prototype.onUnsubscribe = function () {
   console.log('MessageSyncCharacteristic - onUnsubscribe');
   this._updateValueCallback = null;
 };
+
+MessageSyncCharacteristic.prototype.syncOldMessages = function () {
+  messageDB
+    .find({})
+    .sort({ createdAt: -1 })      // OR `.sort({ updatedAt: -1 })` to sort by last modification time
+    .limit(1)
+    .exec((err, docs) => {
+      var obj = { sync: docs[0].id };
+      var data = new Buffer.from(JSON.stringify(obj), "utf-8");
+      this._updateValueCallback(data);
+    });
+}
 
 module.exports = MessageSyncCharacteristic;
