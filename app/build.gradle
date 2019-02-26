@@ -21,7 +21,7 @@ android {
 
     defaultConfig {
         applicationId "nodomain.freeyourgadget.gadgetbridge"
-        minSdkVersion 19
+        minSdkVersion 21
         targetSdkVersion 27
 
         // Note: always bump BOTH versionCode and versionName!

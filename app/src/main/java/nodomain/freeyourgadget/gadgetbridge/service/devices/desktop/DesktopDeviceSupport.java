@@ -22,7 +22,9 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.database.Cursor;
 import android.net.Uri;
+import android.provider.ContactsContract;
 import android.provider.Telephony;
+import android.telephony.PhoneNumberUtils;
 
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
@@ -240,9 +242,15 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
                 if (c.moveToFirst()) {
                     for (int j = 0; j < totalSMS; j++) {
                         JSONObject obj = new JSONObject();
+                        String number = PhoneNumberUtils.normalizeNumber(c.getString(c.getColumnIndexOrThrow(Telephony.Sms.ADDRESS))).replace("+1", "");
+                        String name = getContactName(number, context);
+                        if(StringUtils.isEmpty(name)) {
+                            name = "Unknown";
+                        }
                         obj.put("id", c.getString(c.getColumnIndexOrThrow(Telephony.Sms._ID)));
+                        obj.put("name", name);
                         String smsDate = c.getString(c.getColumnIndexOrThrow(Telephony.Sms.DATE));
-                        obj.put("number",c.getString(c.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)));
+                        obj.put("number",number);
                         obj.put("body", c.getString(c.getColumnIndexOrThrow(Telephony.Sms.BODY)));
                         obj.put("dateFormat", smsDate);
                         String type = "";
@@ -276,6 +284,25 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
         } catch (JSONException e) {
             e.printStackTrace();
         }
+    }
+
+    public String getContactName(final String phoneNumber, Context context)
+    {
+        Uri uri=Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI,Uri.encode(phoneNumber));
+
+        String[] projection = new String[]{ContactsContract.PhoneLookup.DISPLAY_NAME};
+
+        String contactName="";
+        Cursor cursor=context.getContentResolver().query(uri,projection,null,null,null);
+
+        if (cursor != null) {
+            if(cursor.moveToFirst()) {
+                contactName=cursor.getString(0);
+            }
+            cursor.close();
+        }
+
+        return contactName;
     }
 
     @Override

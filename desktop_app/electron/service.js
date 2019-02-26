@@ -34,13 +34,14 @@ var messageSyncConfig = {
   onWriteRequest(data, offset, withoutResponse, callback) {
     console.log('MessageSyncCharacteristic - onWriteRequest: value = ' + data.toString('utf8'));
     const message = JSON.parse(JSON.parse(data.toString('utf8')));
+    message.number = message.number.replace(/\D/g, '');
     messageDB.find({ id: message.id }, function (err, docs) {
       if (docs.length === 0) {
         console.log(message.id + ' NOT FOUND');
         messageDB.insert(message);
       }
     });
-    io.emit('chat message', message.id);
+    io.emit('new sms', message);
   },
   onSubscribe(maxValueSize, updateValueCallback) {
     messageUpdateValueCallback = updateValueCallback;
@@ -66,7 +67,7 @@ var notificationConfig = {
     notifier.notify(noficationObj);
   },
   onSubscribe(maxValueSize, updateValueCallback) {
-    notificationUpdateValueCallback = updateValueCallback;
+    notificationValueCallback = updateValueCallback;
     notifier.notify({
       icon: path.join(iconsDir, 'iconOrig.png'),
       message: 'GadgetBridge Connected',
@@ -92,8 +93,8 @@ const socketIOInit = function () {
   });
 
   io.on('connection', function (socket) {
-    socket.on('chat message', function (msg) {
-      io.emit('chat message', msg);
+    socket.on('new sms', function (msg) {
+      io.emit('new sms', msg);
     });
   });
 
