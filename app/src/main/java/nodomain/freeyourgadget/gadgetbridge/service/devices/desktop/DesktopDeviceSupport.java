@@ -22,6 +22,7 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.database.Cursor;
 import android.net.Uri;
+import android.provider.BaseColumns;
 import android.provider.ContactsContract;
 import android.provider.Telephony;
 import android.telephony.PhoneNumberUtils;
@@ -200,7 +201,6 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
                 if(strLastId != null) {
                     getAllSms(getContext(), builder, strLastId);
                 }
-
             } else {
                 LOG.info("Unhandled characteristic changed: " + characteristicUUID);
                 logMessageContent(characteristic.getValue());
@@ -216,8 +216,8 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
     public boolean onCharacteristicRead(BluetoothGatt gatt,
                                         BluetoothGattCharacteristic characteristic, int status) {
         return super.onCharacteristicRead(gatt, characteristic, status);
-        //TODO: Implement (if necessary)
     }
+
 
     @Override
     public boolean onCharacteristicWrite(BluetoothGatt gatt,
@@ -231,24 +231,19 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
         LOG.info(strLastID);
         ContentResolver cr = context.getContentResolver();
         try{
-            int totalSMS = lastID;
+            // int totalSMS = lastID;
             String selection = null;
-//            if (lastID != "") {
-//                selection = "_ID > " + lastID;
-//            }
+            if (strLastID != "" && strLastID != "0") {
+                selection = "_ID > " + strLastID;
+            }
             Cursor c = cr.query(Telephony.Sms.CONTENT_URI, null, selection, null, Telephony.Sms.Inbox.DEFAULT_SORT_ORDER);
             if (c != null) {
-                // totalSMS = c.getCount();
+                int totalSMS = c.getCount();
                 if (c.moveToFirst()) {
                     for (int j = 0; j < totalSMS; j++) {
-                        JSONObject obj = new JSONObject();
                         String number = PhoneNumberUtils.normalizeNumber(c.getString(c.getColumnIndexOrThrow(Telephony.Sms.ADDRESS))).replace("+1", "");
-                        String name = getContactName(number, context);
-                        if(StringUtils.isEmpty(name)) {
-                            name = "Unknown";
-                        }
+                        JSONObject obj = getContactInfo(number, context);
                         obj.put("id", c.getString(c.getColumnIndexOrThrow(Telephony.Sms._ID)));
-                        obj.put("name", name);
                         String smsDate = c.getString(c.getColumnIndexOrThrow(Telephony.Sms.DATE));
                         obj.put("number",number);
                         obj.put("body", c.getString(c.getColumnIndexOrThrow(Telephony.Sms.BODY)));
@@ -286,23 +281,44 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
         }
     }
 
-    public String getContactName(final String phoneNumber, Context context)
+    public JSONObject getContactInfo(final String phoneNumber, Context context)
     {
         Uri uri=Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI,Uri.encode(phoneNumber));
 
-        String[] projection = new String[]{ContactsContract.PhoneLookup.DISPLAY_NAME};
+        String[] projection = new String[]{ContactsContract.Contacts.DISPLAY_NAME, ContactsContract.Contacts._ID};
 
         String contactName="";
+        String contactEmail="";
         Cursor cursor=context.getContentResolver().query(uri,projection,null,null,null);
 
         if (cursor != null) {
             if(cursor.moveToFirst()) {
                 contactName=cursor.getString(0);
+                String id = cursor.getString(1);
+                Cursor ce = context.getContentResolver().query(ContactsContract.CommonDataKinds.Email.CONTENT_URI, null,
+                        ContactsContract.CommonDataKinds.Email.CONTACT_ID + " = ?", new String[]{id}, null);
+                if (ce != null && ce.moveToFirst()) {
+                    contactEmail = ce.getString(ce.getColumnIndex(ContactsContract.CommonDataKinds.Email.DATA));
+                    ce.close();
+                }
             }
             cursor.close();
         }
 
-        return contactName;
+
+        if(StringUtils.isEmpty(contactName)) {
+            contactName = "Unknown";
+        }
+
+        JSONObject contactInfo = new JSONObject();
+        try {
+            contactInfo.put("name", contactName);
+            contactInfo.put("email", contactEmail);
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+
+        return contactInfo;
     }
 
     @Override
