@@ -301,8 +301,9 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
                         String threadId = cursor.getString(cursor.getColumnIndex(reqCols[0]));
                         String [] recipients = cursor.getString(cursor.getColumnIndex(reqCols[1])).split(" ");
                         obj.put("id", threadId);
-                        Boolean isSingle = recipients.length == 0;
+                        Boolean isGroup = recipients.length == 0;
                         obj.put("snippet", cursor.getString(cursor.getColumnIndex(reqCols[3])));
+                        obj.put("isGroup", isGroup);
                         obj.put("count", count);
                         obj.put("date", cursor.getLong(cursor.getColumnIndex(reqCols[4])));
                         List<JSONObject> messages = new ArrayList<JSONObject>();
@@ -383,12 +384,12 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
                         }
                         obj.put("messages", sortedMessages);
                         LOG.info(obj.toString());
-                        //                    byte[] msg = new Gson().toJson(obj.toString()).getBytes("utf-8");
-                        //                    builder.write(getCharacteristic(messageSyncCharacteristic),msg);
+                        byte[] msg = new Gson().toJson(obj.toString()).getBytes("utf-8");
+                        builder.write(getCharacteristic(messageSyncCharacteristic),msg);
                     }
                 }
             }
-            ////            builder.queue(getQueue());
+            builder.queue(getQueue());
             cursor.close();
 
 
@@ -430,8 +431,8 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
 //            } else {
 //                LOG.info("No message to show!");
 //            }
-        //} catch (IOException e) {
-        //    LOG.warn("showNotification failed: " + e.getMessage());
+        } catch (IOException e) {
+            LOG.warn("showNotification failed: " + e.getMessage());
         } catch (JSONException e) {
             e.printStackTrace();
         }
