@@ -73,8 +73,10 @@ import nodomain.freeyourgadget.gadgetbridge.util.StringUtils;
 public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
     private static final Logger LOG = LoggerFactory.getLogger(DesktopDeviceSupport.class);
     private final UUID deviceService = UUID.fromString("13333333-3333-3333-3333-800000000000");
-    private final UUID messageSyncCharacteristic = UUID.fromString("13333333-3333-3333-3333-800000000001");
-    private final UUID notificationCharacteristic = UUID.fromString("13333333-3333-3333-3333-800000000002");
+    private final UUID smsSyncCharacteristic = UUID.fromString("13333333-3333-3333-3333-800000000001");
+    private final UUID mmsSyncCharacteristic = UUID.fromString("13333333-3333-3333-3333-800000000002");
+    private final UUID conversationSyncCharacteristic = UUID.fromString("13333333-3333-3333-3333-800000000003");
+    private final UUID notificationCharacteristic = UUID.fromString("13333333-3333-3333-3333-800000000004");
 
     private boolean isMusicAppStarted = false;
     private MusicSpec bufferMusicSpec = null;
@@ -97,10 +99,14 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
     }
 
     public DesktopDeviceSupport enableNotifications(TransactionBuilder builder, boolean enable) {
+        BluetoothGattCharacteristic conversationSync = getCharacteristic(conversationSyncCharacteristic);
+        builder.notify(conversationSync, true);
         BluetoothGattCharacteristic notificationInfo = getCharacteristic(notificationCharacteristic);
         builder.notify(notificationInfo, true);
-        BluetoothGattCharacteristic messageSync = getCharacteristic(messageSyncCharacteristic);
-        builder.notify(messageSync, true);
+        BluetoothGattCharacteristic mmsMessageSync = getCharacteristic(mmsSyncCharacteristic);
+        builder.notify(mmsMessageSync, true);
+        BluetoothGattCharacteristic smsMessageSync = getCharacteristic(smsSyncCharacteristic);
+        builder.notify(smsMessageSync, true);
         return this;
     }
 
@@ -201,15 +207,22 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
             TransactionBuilder builder = performInitialized("messageSync");
             LOG.info("Characteristic Change " + characteristic.getUuid());
             UUID characteristicUUID = characteristic.getUuid();
-            if (messageSyncCharacteristic.equals(characteristicUUID)) {
-                String value = new String(characteristic.getValue(), "UTF-8");
-                LOG.info(value);
+            String value = new String(characteristic.getValue(), "UTF-8");
+            long daysBack = 10L;
+            long date = new Date(System.currentTimeMillis() - daysBack * 24 * 3600 * 1000).getTime();
+            LOG.info(value);
+            if (smsSyncCharacteristic.equals(characteristicUUID)) {
                 Type type = new TypeToken<Map<String, String>>(){}.getType();
                 Map<String, String> response = new Gson().fromJson(value, type);
-                String strLastId = response.get("sync");
-                if(strLastId != null) {
-                    getAllSms(getContext(), builder, strLastId);
-                }
+                getAllSms(getContext(), builder, date);
+            } else if (mmsSyncCharacteristic.equals(characteristicUUID)) {
+                Type type = new TypeToken<Map<String, String>>(){}.getType();
+                Map<String, String> response = new Gson().fromJson(value, type);
+                getAllMms(getContext(), builder, date);
+            } else if (conversationSyncCharacteristic.equals(characteristicUUID)) {
+                Type type = new TypeToken<Map<String, String>>(){}.getType();
+                Map<String, String> response = new Gson().fromJson(value, type);
+                getConversations(getContext(), builder, date);
             } else {
                 LOG.info("Unhandled characteristic changed: " + characteristicUUID);
                 logMessageContent(characteristic.getValue());
@@ -235,250 +248,238 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
         //TODO: Implement (if necessary)
     }
 
-    public void getAllSms(Context context, TransactionBuilder builder, String strLastID) {
-        Integer lastID = Integer.parseInt(strLastID);
-        long daysBack = 2L;
-        long date = new Date(System.currentTimeMillis() - daysBack * 24 * 3600 * 1000).getTime();
-
-        LOG.info(strLastID);
+    public void getConversations(final Context context, final TransactionBuilder builder, long pastDatetime) {
+        // Integer lastID = Integer.parseInt(strLastID);
         ContentResolver cr = context.getContentResolver();
-        try{
-            // int totalSMS = lastID;
-            String selection = null;
-            if (strLastID != "" && strLastID != "0") {
-                selection = "_ID > " + strLastID;
+        Cursor convoCur = cr.query(Uri.parse("content://mms-sms/conversations?simple=true"), null, "date>" + pastDatetime, null, "date DESC");
+        if (convoCur != null && convoCur.getCount() > 0) {
+            while (convoCur.moveToNext()) {
+                Integer count = convoCur.getInt(convoCur.getColumnIndexOrThrow("message_count"));
+                if (count > 0) {
+                    try {
+                        JSONObject conversationObj = new JSONObject();
+                        String[] recipients = convoCur.getString(convoCur.getColumnIndexOrThrow("recipient_ids")).split(" ");
+                        Boolean isGroup = recipients.length > 1;
+                        LOG.info(isGroup + "-" + recipients.length + "--" +convoCur.getString(convoCur.getColumnIndexOrThrow("recipient_ids")));
+                        String snippet = convoCur.getString(convoCur.getColumnIndexOrThrow("snippet"));
+                        if (!isGroup) {
+                            Cursor recipientCur = cr.query(Uri.parse("content://mms-sms/canonical-address/" + recipients[0]), null, null, null, null);
+                            if(recipientCur.moveToNext())
+                            {
+                                String phoneNumber = (recipientCur.getString(recipientCur.getColumnIndexOrThrow("address")));
+                                conversationObj = getContactInfo(context, phoneNumber);
+                            }
+                            recipientCur.close();
+                        }
+                        final String threadId = convoCur.getString(convoCur.getColumnIndexOrThrow("_id"));
+                        conversationObj.put("id", threadId);
+                        conversationObj.put("snippet", snippet);
+                        conversationObj.put("isGroup", isGroup);
+
+                        conversationObj.put("count", count);
+                        conversationObj.put("date", convoCur.getLong(convoCur.getColumnIndexOrThrow("date")));
+                        byte[] msg = new Gson().toJson(conversationObj.toString()).getBytes("utf-8");
+                        builder.write(getCharacteristic(conversationSyncCharacteristic), msg);
+                    } catch (IOException e) {
+                        LOG.warn("showNotification failed: " + e.getMessage());
+                    } catch (JSONException e) {
+                        e.printStackTrace();
+                    }
+                }
             }
-//            Cursor c = context.getApplicationContext().getContentResolver().query(Telephony.Threads.CONTENT_URI, null, null, null, "date DESC");
-//            if (c != null && c.getCount() > 0) {
-//                while (c.moveToNext()) {
-//                    JSONObject obj = new JSONObject();
-//                    String number = PhoneNumberUtils.normalizeNumber(c.getString(c.getColumnIndexOrThrow(Telephony.Sms.ADDRESS))).replace("+1", "");
-//                    if(number != "") {
-//                        String threadId = c.getString(c.getColumnIndexOrThrow(Telephony.Sms._ID));
-//                        //String smsDate = c.getString(c.getColumnIndexOrThrow(Telephony.Sms.DATE));
-//                        obj.put("number", number);
-//                        Cursor smsCur = cr.query(Uri.parse("content://sms/"), null,  "thread_id=" + threadId, null, "date DESC");
+        }
+        builder.queue(getQueue());
+        convoCur.close();
+    }
+
+//    public void getConversationsTEST(final Context context, final TransactionBuilder builder, String strLastID) {
+//        // Integer lastID = Integer.parseInt(strLastID);
+//        long daysBack = 7L;
+//        long date = new Date(System.currentTimeMillis() - daysBack * 24 * 3600 * 1000).getTime();
+//        ContentResolver cr = context.getContentResolver();
+//        Cursor convoCur = cr.query(Uri.parse("content://mms-sms/conversations"), null, "date>" + date, null, "date DESC");
+//        if (convoCur != null && convoCur.getCount() > 0) {
+//            while (convoCur.moveToNext()) {
+////                Integer count = convoCur.getInt(convoCur.getColumnIndexOrThrow("message_count"));
+////                if (count > 0) {
+////                    try {
+//
+//                        final String address = PhoneNumberUtils.normalizeNumber(convoCur.getString(convoCur.getColumnIndexOrThrow(Telephony.Sms.ADDRESS))).replace("+1", "");
+//                        final String body = convoCur.getString(convoCur.getColumnIndexOrThrow("body"));
+////                        final JSONObject conversationObj = new JSONObject();
+//                        final String threadId = convoCur.getString(convoCur.getColumnIndexOrThrow("_id"));
+//                LOG.info(address + '-' + body);
+////                        String[] recipients = convoCur.getString(convoCur.getColumnIndexOrThrow("recipient_ids")).split(" ");
+////                        conversationObj.put("id", threadId);
+////                        Boolean isGroup = recipients.length == 0;
+////                        conversationObj.put("snippet", convoCur.getString(convoCur.getColumnIndexOrThrow("snippet")));
+////                        conversationObj.put("isGroup", isGroup);
+////                        conversationObj.put("count", count);
+////                        conversationObj.put("date", convoCur.getLong(convoCur.getColumnIndexOrThrow("date")));
+////                        byte[] msg = new Gson().toJson(conversationObj.toString()).getBytes("utf-8");
+////                        builder.write(getCharacteristic(conversationSyncCharacteristic), msg);
+////                    } catch (IOException e) {
+////                        LOG.warn("showNotification failed: " + e.getMessage());
+////                    } catch (JSONException e) {
+////                        e.printStackTrace();
+////                    }
+////                }
+//            }
+//        }
+//        // builder.queue(getQueue());
+//        convoCur.close();
+//    }
+
+
+    public void getAllSms(final Context context, final TransactionBuilder builder, long pastDatetime) {
+//        Integer lastID = Integer.parseInt(strLastID);
+
+
+        ContentResolver cr = context.getContentResolver();
+        Cursor smsCur = cr.query(Uri.parse("content://sms/"), null, "date>" + pastDatetime, null, "date DESC");
+        while (smsCur.moveToNext()) {
+            try {
+                JSONObject sms = getSMSInfo(smsCur, context);
+                byte[] msg = new Gson().toJson(sms.toString()).getBytes("utf-8");
+                builder.write(getCharacteristic(smsSyncCharacteristic), msg);
+            } catch (IOException e) {
+                LOG.warn("showNotification failed: " + e.getMessage());
+            }
+        }
+        smsCur.close();
+        builder.queue(getQueue());
+    }
+
+    public void getAllMms(final Context context, final TransactionBuilder builder, long pastDatetime) {
+        Date pastDate = new Date(pastDatetime);
+//        long pastDate = new Date(System.currentTimeMillis() - daysBack * 24 * 3600 * 1000).getTime();
+
+
+        ContentResolver cr = context.getContentResolver();
+        Cursor mmsCur = cr.query(Uri.parse("content://mms/"), null, null, null, "date DESC");
+        LOG.info(mmsCur.getCount() +"-Count");
+        while (mmsCur.moveToNext()) {
+            try {
+                Date smsDate = new Date(mmsCur.getLong(mmsCur.getColumnIndexOrThrow(Telephony.Mms.DATE))* 1000);
+//                LOG.info(smsDate + " vs " + pastDate);
+                if(smsDate.compareTo(pastDate) > 0) {
+                // if(smsDate > pastDate) {
+                    JSONObject mms = getMMSInfo(mmsCur, context);
+                    byte[] msg = new Gson().toJson(mms.toString()).getBytes("utf-8");
+                    builder.write(getCharacteristic(mmsSyncCharacteristic), msg);
+                }
+            } catch (IOException e) {
+                LOG.warn("showNotification failed: " + e.getMessage());
+            }
+        }
+        mmsCur.close();
+        builder.queue(getQueue());
+    }
+
+//    public void getAllMesssages(final Context context, final TransactionBuilder builder, String strLastID) {
+////        Integer lastID = Integer.parseInt(strLastID);
+//        long daysBack = 2L;
+//        long date = new Date(System.currentTimeMillis() - daysBack * 24 * 3600 * 1000).getTime();
+//
+//        LOG.info(strLastID);
+//        ContentResolver cr = context.getContentResolver();
+//        final String[] projection = new String[]{"_id", "ct_t", Telephony.Sms.THREAD_ID,
+//                Telephony.Sms.ADDRESS,
+//                Telephony.Sms.DATE,
+//                Telephony.Sms.TYPE,
+//                Telephony.Sms.BODY};
+//        Cursor smsCur = cr.query(Uri.parse("content://mms-sms/complete-conversations/"), projection, "date>" + date, null, "date DESC");
+//        while (smsCur.moveToNext()) {
+//            try {
+//                String string = smsCur.getString(smsCur.getColumnIndex("ct_t"));
+//                JSONObject obj = new JSONObject();
+//                if ("application/vnd.wap.multipart.related".equals(string)) {
+//                    obj = getMMSInfo(smsCur, context);
+//                } else {
+//                    obj = getSMSInfo(smsCur, context);
+//                }
+//
+//                byte[] msg = new Gson().toJson(obj.toString()).getBytes("utf-8");
+//                builder.write(getCharacteristic(smsSyncCharacteristic), msg);
+//            } catch (IOException e) {
+//                LOG.warn("showNotification failed: " + e.getMessage());
+//            }
+//        }
+//        smsCur.close();
+//        builder.queue(getQueue());
+//    }
+
+//    public void getAllMessages(final Context context, final TransactionBuilder builder, String strLastID) {
+//        Integer lastID = Integer.parseInt(strLastID);
+//        long daysBack = 2L;
+//        final long date = new Date(System.currentTimeMillis() - daysBack * 24 * 3600 * 1000).getTime();
+//
+//        LOG.info(strLastID);
+//        ContentResolver cr = context.getContentResolver();
+//        try {
+//            // int totalSMS = lastID;
+//            String selection = null;
+//            if (strLastID != "" && strLastID != "0") {
+//                selection = "_ID > " + strLastID;
+//            }
+//            Uri uri = Uri.parse("content://mms-sms/conversations?simple=true");
+//            String[] reqCols = new String[]{"_id", "recipient_ids", "message_count", "snippet", "date", "read"};
+//            Cursor cursor = context.getApplicationContext().getContentResolver().query(uri, reqCols, null, null, "date DESC");
+//            if (cursor != null && cursor.getCount() > 0) {
+//                while (cursor.moveToNext()) {
+//                    Integer count = cursor.getInt(cursor.getColumnIndex(reqCols[2]));
+//                    if (count > 0) {
+//                        final JSONObject conversationObj = new JSONObject();
+//                        final String threadId = cursor.getString(cursor.getColumnIndex(reqCols[0]));
+//                        String[] recipients = cursor.getString(cursor.getColumnIndex(reqCols[1])).split(" ");
+//                        conversationObj.put("id", threadId);
+//                        Boolean isGroup = recipients.length == 0;
+//                        conversationObj.put("snippet", cursor.getString(cursor.getColumnIndex(reqCols[3])));
+//                        conversationObj.put("isGroup", isGroup);
+//                        conversationObj.put("count", count);
+//                        conversationObj.put("date", cursor.getLong(cursor.getColumnIndex(reqCols[4])));
+////                        new Thread(new Runnable() {
+////                            @Override
+////                            public void run() {
+//                        Cursor smsCur = context.getApplicationContext().getContentResolver().query(Uri.parse("content://sms/"), null, "thread_id=" + threadId + " AND date" + ">" + date, null, "date DESC");
 //                        while (smsCur.moveToNext()) {
-//                            String messageId = c.getString(c.getColumnIndexOrThrow(Telephony.Mms._ID));
-//                            LOG.info("SMS_ID" + messageId);
+//                            try {
+//                                JSONObject sms = DesktopDeviceSupport.this.getSMSInfo(smsCur, context, conversationObj);
+//                                byte[] msg = new Gson().toJson(sms.toString()).getBytes("utf-8");
+//                                builder.write(DesktopDeviceSupport.this.getCharacteristic(smsSyncCharacteristic), msg);
+//                            } catch (IOException e) {
+//                                LOG.warn("showNotification failed: " + e.getMessage());
+//                            }
 //                        }
-//                        Cursor mmsCur = cr.query(Uri.parse("content://mms/"), null,  "thread_id=" + threadId, null, "date DESC");
+//                        smsCur.close();
+////                            }
+////                        }).start();
+//
+////                        new Thread(new Runnable() {
+////                            @Override
+////                            public void run() {
+//                        Cursor mmsCur = context.getApplicationContext().getContentResolver().query(Uri.parse("content://mms/"), null, "thread_id=" + threadId + " AND date" + ">" + date, null, "date DESC");
 //                        while (mmsCur.moveToNext()) {
-//                            String messageId = c.getString(c.getColumnIndexOrThrow(Telephony.Mms._ID));
-//                            LOG.info("MMS_ID" + messageId);
+//                            try {
+//                                JSONObject mms = DesktopDeviceSupport.this.getMMSInfo(mmsCur, context, conversationObj);
+//                                byte[] msg = new Gson().toJson(mms.toString()).getBytes("utf-8");
+//                                builder.write(DesktopDeviceSupport.this.getCharacteristic(smsSyncCharacteristic), msg);
+//                            } catch (IOException e) {
+//                                LOG.warn("showNotification failed: " + e.getMessage());
+//                            }
 //                        }
-                        //obj.put("body", c.getString(c.getColumnIndexOrThrow(Telephony.Sms.BODY)));
-                        //obj.put("dateFormat", smsDate);
-                        // String type = "";
-//                        switch (Integer.parseInt(c.getString(c.getColumnIndexOrThrow(Telephony.Sms.TYPE)))) {
-//                            case Telephony.Sms.MESSAGE_TYPE_INBOX:
-//                                type = "inbox";
-//                                break;
-//                            case Telephony.Sms.MESSAGE_TYPE_SENT:
-//                                type = "sent";
-//                                break;
-//                            case Telephony.Sms.MESSAGE_TYPE_OUTBOX:
-//                                type = "outbox";
-//                                break;
-//                            default:
-//                                break;
-//                        }
-//                        obj.put("type", type);
-//                        LOG.info(obj.toString());
+//                        mmsCur.close();
+////                            }
+////                        }).start();
 //                    }
 //                }
 //            }
 //            builder.queue(getQueue());
-//            c.close();
-            Uri uri = Uri.parse("content://mms-sms/conversations?simple=true");
-            String[] reqCols = new String[] { "_id", "recipient_ids", "message_count", "snippet", "date", "read" };
-            Cursor cursor = context.getApplicationContext().getContentResolver().query(uri, reqCols, null, null, "date DESC");
-            if (cursor != null && cursor.getCount() > 0) {
-                while (cursor.moveToNext()) {
-                    Integer count = cursor.getInt(cursor.getColumnIndex(reqCols[2]));
-                    if(count > 0) {
-                        JSONObject obj = new JSONObject();
-                        String threadId = cursor.getString(cursor.getColumnIndex(reqCols[0]));
-                        String [] recipients = cursor.getString(cursor.getColumnIndex(reqCols[1])).split(" ");
-                        obj.put("id", threadId);
-                        Boolean isGroup = recipients.length == 0;
-                        obj.put("snippet", cursor.getString(cursor.getColumnIndex(reqCols[3])));
-                        obj.put("isGroup", isGroup);
-                        obj.put("count", count);
-                        obj.put("date", cursor.getLong(cursor.getColumnIndex(reqCols[4])));
-                        List<JSONObject> messages = new ArrayList<JSONObject>();
-                        Cursor smsCur = context.getApplicationContext().getContentResolver().query(Uri.parse("content://sms/"), null, "thread_id=" + threadId + " AND date" + ">" + date, null, "date DESC");
-                        while (smsCur.moveToNext()) {
-//                            Integer messageId = smsCur.getInt(smsCur.getColumnIndexOrThrow(Telephony.Sms._ID));
-//                            String number = PhoneNumberUtils.normalizeNumber(smsCur.getString(smsCur.getColumnIndexOrThrow(Telephony.Sms.ADDRESS))).replace("+1", "");
-//                            String smsDate = smsCur.getString(smsCur.getColumnIndexOrThrow(Telephony.Sms.DATE));
-//                            String direction = "";
-//                            String content = smsCur.getString(smsCur.getColumnIndexOrThrow(Telephony.Sms.BODY));
-//                            switch (Integer.parseInt(smsCur.getString(smsCur.getColumnIndexOrThrow(Telephony.Sms.TYPE)))) {
-//                                case Telephony.Sms.MESSAGE_TYPE_INBOX:
-//                                    direction = "inbox";
-//                                    break;
-//                                case Telephony.Sms.MESSAGE_TYPE_SENT:
-//                                    direction = "sent";
-//                                    break;
-//                                case Telephony.Sms.MESSAGE_TYPE_OUTBOX:
-//                                    direction = "outbox";
-//                                    break;
-//                                default:
-//                                    break;
-//                            }
-//                            obj.put("direction", direction);
-//                            JSONObject smsObj = getContactInfo(context, number);
-//                            smsObj.put("messageId", messageId);
-//                            smsObj.put("date", smsDate);
-//                            smsObj.put("number", number);
-//                            smsObj.put("direction", direction);
-//                            smsObj.put("content", content);
-                            messages.add(getSMSInfo(smsCur, context));
-                        }
-                        smsCur.close();
-                        Cursor mmsCur = context.getApplicationContext().getContentResolver().query(Uri.parse("content://mms/"), null, "thread_id=" + threadId + " AND date" + ">" + date, null, "date DESC");
-                        while (mmsCur.moveToNext()) {
-//                            Integer messageId = mmsCur.getInt(mmsCur.getColumnIndexOrThrow(Telephony.Mms._ID));
-//                            String number = PhoneNumberUtils.normalizeNumber(getAddressNumber(context, messageId)).replace("+1", "");
-//                            String smsDate = mmsCur.getString(mmsCur.getColumnIndexOrThrow(Telephony.Mms.DATE));
-//                            String content = getMMSContent(context, messageId);
-//                            JSONObject mmsObj = getContactInfo(context, number);
-//                            mmsObj.put("messageId", messageId);
-//                            mmsObj.put("date", smsDate);
-//                            mmsObj.put("number", number);
-////                            mmsObj.put("direction", direction);
-//                            if (content == "") {
-//                                mmsObj.put("content", "[Multimedia Item]");
-//                            } else {
-//                                mmsObj.put("content", content);
-//                            }
-                            messages.add(getMMSInfo(mmsCur, context));
-                        }
-                        mmsCur.close();
-                        JSONArray sortedMessages = new JSONArray();
-                        Collections.sort(messages, new Comparator<JSONObject>() {
-                            //You can change "Name" with "ID" if you want to sort by ID
-                            private static final String KEY_NAME = "date";
-
-                            @Override
-                            public int compare(JSONObject a, JSONObject b) {
-                                String valA = new String();
-                                String valB = new String();
-
-                                try {
-                                    valA = (String) a.get(KEY_NAME);
-                                    valB = (String) b.get(KEY_NAME);
-                                } catch (JSONException e) {
-                                    //do something
-                                }
-
-                                return -valA.compareTo(valB);
-                                //if you want to change the sort order, simply use the following:
-                                //return -valA.compareTo(valB);
-                            }
-                        });
-
-                        for (int i = 0; i < messages.size(); i++) {
-                            sortedMessages.put(messages.get(i));
-                        }
-                        obj.put("messages", sortedMessages);
-                        LOG.info(obj.toString());
-                        byte[] msg = new Gson().toJson(obj.toString()).getBytes("utf-8");
-                        builder.write(getCharacteristic(messageSyncCharacteristic),msg);
-                    }
-                }
-            }
-            builder.queue(getQueue());
-            cursor.close();
-
-
-//            Cursor c = cr.query(Telephony.Sms.CONTENT_URI, null, selection, null, Telephony.Sms.Inbox.DEFAULT_SORT_ORDER);
-//            if (c != null) {
-//                int totalSMS = c.getCount();
-//                if (c.moveToFirst()) {
-//                    for (int j = 0; j < totalSMS; j++) {
-//                        String number = PhoneNumberUtils.normalizeNumber(c.getString(c.getColumnIndexOrThrow(Telephony.Sms.ADDRESS))).replace("+1", "");
-//                        JSONObject obj = getContactInfo(number, context);
-//                        obj.put("id", c.getString(c.getColumnIndexOrThrow(Telephony.Sms._ID)));
-//                        String smsDate = c.getString(c.getColumnIndexOrThrow(Telephony.Sms.DATE));
-//                        obj.put("number",number);
-//                        obj.put("body", c.getString(c.getColumnIndexOrThrow(Telephony.Sms.BODY)));
-//                        obj.put("dateFormat", smsDate);
-//                        String type = "";
-//                        switch (Integer.parseInt(c.getString(c.getColumnIndexOrThrow(Telephony.Sms.TYPE)))) {
-//                            case Telephony.Sms.MESSAGE_TYPE_INBOX:
-//                                type = "inbox";
-//                                break;
-//                            case Telephony.Sms.MESSAGE_TYPE_SENT:
-//                                type = "sent";
-//                                break;
-//                            case Telephony.Sms.MESSAGE_TYPE_OUTBOX:
-//                                type = "outbox";
-//                                break;
-//                            default:
-//                                break;
-//                        }
-//                        obj.put("type", type);
-//                        byte[] msg = new Gson().toJson(obj.toString()).getBytes("utf-8");
-//                        builder.write(getCharacteristic(messageSyncCharacteristic),msg);
-//                        c.moveToNext();
-//                    }
-//                }
-//                builder.queue(getQueue());
-//                c.close();
-//
-//            } else {
-//                LOG.info("No message to show!");
-//            }
-        } catch (IOException e) {
-            LOG.warn("showNotification failed: " + e.getMessage());
-        } catch (JSONException e) {
-            e.printStackTrace();
-        }
-    }
-
-    public JSONObject getContactInfo(Context context, final String phoneNumber)
-    {
-        Uri uri=Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI,Uri.encode(phoneNumber));
-
-        String[] projection = new String[]{ContactsContract.Contacts.DISPLAY_NAME, ContactsContract.Contacts._ID};
-
-        String contactName="";
-        String contactEmail="";
-        Cursor cursor=context.getContentResolver().query(uri,projection,null,null,null);
-
-        if (cursor != null) {
-            if(cursor.moveToFirst()) {
-                contactName=cursor.getString(0);
-                String id = cursor.getString(1);
-                Cursor ce = context.getContentResolver().query(ContactsContract.CommonDataKinds.Email.CONTENT_URI, null,
-                        ContactsContract.CommonDataKinds.Email.CONTACT_ID + " = ?", new String[]{id}, null);
-                if (ce != null && ce.moveToFirst()) {
-                    contactEmail = ce.getString(ce.getColumnIndex(ContactsContract.CommonDataKinds.Email.DATA));
-                    ce.close();
-                }
-            }
-            cursor.close();
-        }
-
-
-        if(StringUtils.isEmpty(contactName)) {
-            contactName = "Unknown";
-        }
-
-        JSONObject contactInfo = new JSONObject();
-        try {
-            String image = "https://www.gravatar.com/avatar/" + md5(contactEmail) + "?s=55";
-            contactInfo.put("image", image);
-            contactInfo.put("name", contactName);
-            contactInfo.put("email", contactEmail);
-        } catch (JSONException e) {
-            e.printStackTrace();
-        }
-
-        return contactInfo;
-    }
+//            cursor.close();
+//        } catch (JSONException e) {
+//            e.printStackTrace();
+//        }
+//    }
 
     @Override
     public void onEnableRealtimeSteps(boolean enable) {
@@ -605,12 +606,56 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
 
     }
 
+    public JSONObject getContactInfo(Context context, final String phoneNumber)
+    {
+        Uri uri=Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI,Uri.encode(phoneNumber));
+
+        String[] projection = new String[]{ContactsContract.Contacts.DISPLAY_NAME, ContactsContract.Contacts._ID};
+
+        String contactName="";
+        String contactEmail="";
+        Cursor cursor=context.getContentResolver().query(uri,projection,null,null,null);
+
+        if (cursor != null) {
+            if(cursor.moveToFirst()) {
+                contactName=cursor.getString(0);
+                String id = cursor.getString(1);
+                Cursor ce = context.getContentResolver().query(ContactsContract.CommonDataKinds.Email.CONTENT_URI, null,
+                        ContactsContract.CommonDataKinds.Email.CONTACT_ID + " = ?", new String[]{id}, null);
+                if (ce != null && ce.moveToFirst()) {
+                    contactEmail = ce.getString(ce.getColumnIndex(ContactsContract.CommonDataKinds.Email.DATA));
+                    ce.close();
+                }
+            }
+            cursor.close();
+        }
+
+
+        if(StringUtils.isEmpty(contactName)) {
+            contactName = "Unknown";
+        }
+
+        JSONObject contactInfo = new JSONObject();
+        try {
+            String image = "https://www.gravatar.com/avatar/" + md5(contactEmail) + "?s=55";
+            contactInfo.put("image", image);
+            contactInfo.put("name", contactName);
+            contactInfo.put("email", contactEmail);
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+
+        return contactInfo;
+    }
+
     private JSONObject getSMSInfo(Cursor smsCur, Context context) {
-        JSONObject smsObj = new JSONObject();
+        JSONObject smsObj = null;
         try{
+            smsObj = new JSONObject();
             Integer messageId = smsCur.getInt(smsCur.getColumnIndexOrThrow(Telephony.Sms._ID));
+            Integer threadId = smsCur.getInt(smsCur.getColumnIndexOrThrow(Telephony.Sms.THREAD_ID));
             String number = PhoneNumberUtils.normalizeNumber(smsCur.getString(smsCur.getColumnIndexOrThrow(Telephony.Sms.ADDRESS))).replace("+1", "");
-            String smsDate = smsCur.getString(smsCur.getColumnIndexOrThrow(Telephony.Sms.DATE));
+            Long smsDate = smsCur.getLong(smsCur.getColumnIndexOrThrow(Telephony.Sms.DATE));
             String direction = "";
             String content = smsCur.getString(smsCur.getColumnIndexOrThrow(Telephony.Sms.BODY));
             switch (Integer.parseInt(smsCur.getString(smsCur.getColumnIndexOrThrow(Telephony.Sms.TYPE)))) {
@@ -627,7 +672,8 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
                     break;
             }
             smsObj = getContactInfo(context, number);
-            smsObj.put("messageId", messageId);
+            smsObj.put("conversationId", threadId);
+            smsObj.put("messageId", "sms_" +messageId);
             smsObj.put("date", smsDate);
             smsObj.put("number", number);
             smsObj.put("direction", direction);
@@ -639,52 +685,53 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
     }
 
     private JSONObject getMMSInfo(Cursor mmsCur, Context context) {
-        JSONObject mmsObj = new JSONObject();
-        try {
+        JSONObject mmsObj = null;
+        try{
+            mmsObj = new JSONObject();
             Integer messageId = mmsCur.getInt(mmsCur.getColumnIndexOrThrow(Telephony.Mms._ID));
+            String mtype = mmsCur.getString(mmsCur.getColumnIndex(Telephony.Mms.MESSAGE_TYPE));
+
             String selectionAdd = new String("msg_id=" + messageId);
             String uriStr = "content://mms/"+messageId+"/addr";
             Uri uriAddress = Uri.parse(uriStr);
             Cursor cAdd = context.getContentResolver().query(uriAddress, null,
                     selectionAdd, null, null);
             String dirtyNumber = null;
-            String type = "";
             String address = "";
-            if (cAdd.moveToLast()) {
-                do {
-                    address = cAdd.getString(cAdd.getColumnIndex("address"));
-                    type = cAdd.getString(cAdd.getColumnIndex("type"));
-                    if (address != null) {
-                        try {
-                            Long.parseLong(address.replace("-", ""));
+            if (cAdd.moveToFirst()) {
+                address = cAdd.getString(cAdd.getColumnIndex("address"));
+                if (address != null) {
+                    try {
+                        Long.parseLong(address.replace("-", ""));
+                        dirtyNumber = address;
+                    } catch (NumberFormatException nfe) {
+                        if (dirtyNumber == null) {
                             dirtyNumber = address;
-                        } catch (NumberFormatException nfe) {
-                            if (dirtyNumber == null) {
-                                dirtyNumber = address;
-                            }
                         }
                     }
-                } while (cAdd.moveToPrevious());
+                }
             }
             if (cAdd != null) {
                 cAdd.close();
             }
 
             String direction = "sent";
-            if(Integer.parseInt(type) == Telephony.Sms.MESSAGE_TYPE_INBOX) {
+            if(Integer.parseInt(mtype) == 132) {
                 direction = "inbox";
             }
 
             String number = PhoneNumberUtils.normalizeNumber(dirtyNumber).replace("+1", "");
-            String smsDate = mmsCur.getString(mmsCur.getColumnIndexOrThrow(Telephony.Mms.DATE));
+            long smsDate = mmsCur.getLong(mmsCur.getColumnIndexOrThrow(Telephony.Mms.DATE)) * 1000;
+            Integer threadId = mmsCur.getInt(mmsCur.getColumnIndexOrThrow(Telephony.Mms.THREAD_ID));
             String content = getMMSContent(context, messageId);
             mmsObj = getContactInfo(context, number);
-            mmsObj.put("messageId", messageId);
+            mmsObj.put("messageId", "mms_" +messageId);
+            mmsObj.put("conversationId", threadId);
             mmsObj.put("date", smsDate);
             mmsObj.put("number", number);
             mmsObj.put("direction", direction);
             if (content == "") {
-                mmsObj.put("content", "[Multimedia Item]");
+                mmsObj.put("content", " [Multimedia Item] ");
             } else {
                 mmsObj.put("content", content);
             }
@@ -704,7 +751,7 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
                     || curPart.getString(3).equals("image/png")
                     || curPart.getString(3).equals("image/gif"))
             {
-                body = body + "[Image]";
+                body = body + " [Image] ";
             }
             else if ("text/plain".equals(curPart.getString(3))) {
                 String data = curPart.getString(curPart.getColumnIndex("_data"));
@@ -742,6 +789,32 @@ public class DesktopDeviceSupport extends AbstractBTLEDeviceSupport {
             }
         }
         return sb.toString();
+    }
+
+    private String getANumber(Context context, int id) {
+        String add = "";
+        String type = "";
+        final String[] projection = new String[] {"address","contact_id","charset","type"};
+        final String selection = "type=137 or type=151"; // PduHeaders
+        Uri.Builder builder = Uri.parse("content://mms").buildUpon();
+        builder.appendPath(String.valueOf(id)).appendPath("addr");
+
+        Cursor cursor = context.getContentResolver().query(
+                builder.build(),
+                projection,
+                selection,
+                null, null);
+
+        if (cursor.moveToFirst()) {
+            do {
+                add = cursor.getString(cursor.getColumnIndex("address"));
+                type = cursor.getString(cursor.getColumnIndex("type"));
+            } while(cursor.moveToNext());
+        }
+        // Outbound messages address type=137 and the value will be 'insert-address-token'
+        // Outbound messages address type=151 and the value will be the address
+        // Additional checking can be done here to return the correct address.
+        return add;
     }
 
     public String md5(String s) {
